@@ -1,0 +1,288 @@
+{
+  "_metadata": {
+    "description": "Cached benchmark return data for AI Money Mentor. Used as fallback when yfinance is rate-limited or unavailable. Update periodically from NSE/BSE official data.",
+    "last_updated": "2025-12-31",
+    "source": "NSE India historical data",
+    "note": "All returns are CAGR (Compounded Annual Growth Rate) based on price returns only, not total returns."
+  },
+  "^NSEI": {
+    "name": "NIFTY 50",
+    "ticker": "^NSEI",
+    "periods": {
+      "1Y": {
+        "cagr_pct": 8.2,
+        "total_return_pct": 8.2,
+        "max_drawdown_pct": -12.3,
+        "volatility_annualised_pct": 13.1,
+        "start_date": "2024-01-01",
+        "end_date": "2024-12-31",
+        "start_nav": 21731.4,
+        "end_nav": 23644.8
+      },
+      "3Y": {
+        "cagr_pct": 14.1,
+        "total_return_pct": 48.6,
+        "max_drawdown_pct": -16.8,
+        "volatility_annualised_pct": 14.2,
+        "start_date": "2022-01-01",
+        "end_date": "2024-12-31",
+        "start_nav": 17354.0,
+        "end_nav": 23644.8
+      },
+      "5Y": {
+        "cagr_pct": 15.4,
+        "total_return_pct": 105.7,
+        "max_drawdown_pct": -38.4,
+        "volatility_annualised_pct": 16.2,
+        "start_date": "2020-01-01",
+        "end_date": "2024-12-31",
+        "start_nav": 11521.0,
+        "end_nav": 23644.8
+      },
+      "7Y": {
+        "cagr_pct": 13.2,
+        "total_return_pct": 135.0,
+        "max_drawdown_pct": -38.4,
+        "volatility_annualised_pct": 15.8,
+        "start_date": "2018-01-01",
+        "end_date": "2024-12-31",
+        "start_nav": 10558.0,
+        "end_nav": 23644.8
+      },
+      "10Y": {
+        "cagr_pct": 11.8,
+        "total_return_pct": 204.2,
+        "max_drawdown_pct": -38.4,
+        "volatility_annualised_pct": 15.9,
+        "start_date": "2015-01-01",
+        "end_date": "2024-12-31",
+        "start_nav": 7749.0,
+        "end_nav": 23644.8
+      }
+    }
+  },
+  "^BSESN": {
+    "name": "BSE SENSEX",
+    "ticker": "^BSESN",
+    "periods": {
+      "1Y": {
+        "cagr_pct": 8.1,
+        "total_return_pct": 8.1,
+        "max_drawdown_pct": -11.8,
+        "volatility_annualised_pct": 13.0,
+        "start_date": "2024-01-01",
+        "end_date": "2024-12-31",
+        "start_nav": 72240.0,
+        "end_nav": 78140.0
+      },
+      "3Y": {
+        "cagr_pct": 13.8,
+        "total_return_pct": 47.2,
+        "max_drawdown_pct": -16.0,
+        "volatility_annualised_pct": 13.9,
+        "start_date": "2022-01-01",
+        "end_date": "2024-12-31",
+        "start_nav": 58254.0,
+        "end_nav": 78140.0
+      },
+      "5Y": {
+        "cagr_pct": 15.1,
+        "total_return_pct": 101.8,
+        "max_drawdown_pct": -37.8,
+        "volatility_annualised_pct": 15.9,
+        "start_date": "2020-01-01",
+        "end_date": "2024-12-31",
+        "start_nav": 38773.0,
+        "end_nav": 78140.0
+      },
+      "7Y": {
+        "cagr_pct": 12.9,
+        "total_return_pct": 129.5,
+        "max_drawdown_pct": -37.8,
+        "volatility_annualised_pct": 15.5,
+        "start_date": "2018-01-01",
+        "end_date": "2024-12-31",
+        "start_nav": 34153.0,
+        "end_nav": 78140.0
+      },
+      "10Y": {
+        "cagr_pct": 11.5,
+        "total_return_pct": 194.6,
+        "max_drawdown_pct": -37.8,
+        "volatility_annualised_pct": 15.6,
+        "start_date": "2015-01-01",
+        "end_date": "2024-12-31",
+        "start_nav": 26513.0,
+        "end_nav": 78140.0
+      }
+    }
+  },
+  "NIFTYBEES.NS": {
+    "name": "Nippon India ETF Nifty 50 (NIFTYBEES)",
+    "ticker": "NIFTYBEES.NS",
+    "periods": {
+      "1Y": {
+        "cagr_pct": 7.9,
+        "total_return_pct": 7.9,
+        "max_drawdown_pct": -12.5,
+        "volatility_annualised_pct": 13.3,
+        "start_date": "2024-01-01",
+        "end_date": "2024-12-31",
+        "start_nav": 217.5,
+        "end_nav": 234.7
+      },
+      "3Y": {
+        "cagr_pct": 13.7,
+        "total_return_pct": 46.8,
+        "max_drawdown_pct": -17.1,
+        "volatility_annualised_pct": 14.4,
+        "start_date": "2022-01-01",
+        "end_date": "2024-12-31",
+        "start_nav": 159.8,
+        "end_nav": 234.7
+      },
+      "5Y": {
+        "cagr_pct": 14.9,
+        "total_return_pct": 98.5,
+        "max_drawdown_pct": -38.6,
+        "volatility_annualised_pct": 16.4,
+        "start_date": "2020-01-01",
+        "end_date": "2024-12-31",
+        "start_nav": 118.2,
+        "end_nav": 234.7
+      },
+      "7Y": {
+        "cagr_pct": 12.8,
+        "total_return_pct": 127.1,
+        "max_drawdown_pct": -38.6,
+        "volatility_annualised_pct": 16.0,
+        "start_date": "2018-01-01",
+        "end_date": "2024-12-31",
+        "start_nav": 103.3,
+        "end_nav": 234.7
+      },
+      "10Y": {
+        "cagr_pct": 11.4,
+        "total_return_pct": 190.2,
+        "max_drawdown_pct": -38.6,
+        "volatility_annualised_pct": 16.1,
+        "start_date": "2015-01-01",
+        "end_date": "2024-12-31",
+        "start_nav": 80.9,
+        "end_nav": 234.7
+      }
+    }
+  },
+  "^CNXIT": {
+    "name": "NIFTY IT",
+    "ticker": "^CNXIT",
+    "periods": {
+      "1Y": {
+        "cagr_pct": 22.4,
+        "total_return_pct": 22.4,
+        "max_drawdown_pct": -14.2,
+        "volatility_annualised_pct": 19.8,
+        "start_date": "2024-01-01",
+        "end_date": "2024-12-31",
+        "start_nav": 33006.0,
+        "end_nav": 40401.0
+      },
+      "3Y": {
+        "cagr_pct": 8.2,
+        "total_return_pct": 26.6,
+        "max_drawdown_pct": -32.1,
+        "volatility_annualised_pct": 22.3,
+        "start_date": "2022-01-01",
+        "end_date": "2024-12-31",
+        "start_nav": 31925.0,
+        "end_nav": 40401.0
+      },
+      "5Y": {
+        "cagr_pct": 21.5,
+        "total_return_pct": 163.8,
+        "max_drawdown_pct": -32.1,
+        "volatility_annualised_pct": 23.1,
+        "start_date": "2020-01-01",
+        "end_date": "2024-12-31",
+        "start_nav": 15352.0,
+        "end_nav": 40401.0
+      },
+      "7Y": {
+        "cagr_pct": 18.9,
+        "total_return_pct": 238.2,
+        "max_drawdown_pct": -32.1,
+        "volatility_annualised_pct": 22.8,
+        "start_date": "2018-01-01",
+        "end_date": "2024-12-31",
+        "start_nav": 11898.0,
+        "end_nav": 40401.0
+      },
+      "10Y": {
+        "cagr_pct": 16.1,
+        "total_return_pct": 344.2,
+        "max_drawdown_pct": -32.1,
+        "volatility_annualised_pct": 22.5,
+        "start_date": "2015-01-01",
+        "end_date": "2024-12-31",
+        "start_nav": 9101.0,
+        "end_nav": 40401.0
+      }
+    }
+  },
+  "^NSEBANK": {
+    "name": "NIFTY Bank",
+    "ticker": "^NSEBANK",
+    "periods": {
+      "1Y": {
+        "cagr_pct": 4.3,
+        "total_return_pct": 4.3,
+        "max_drawdown_pct": -15.6,
+        "volatility_annualised_pct": 17.2,
+        "start_date": "2024-01-01",
+        "end_date": "2024-12-31",
+        "start_nav": 47614.0,
+        "end_nav": 49654.0
+      },
+      "3Y": {
+        "cagr_pct": 10.1,
+        "total_return_pct": 33.4,
+        "max_drawdown_pct": -19.3,
+        "volatility_annualised_pct": 17.8,
+        "start_date": "2022-01-01",
+        "end_date": "2024-12-31",
+        "start_nav": 37238.0,
+        "end_nav": 49654.0
+      },
+      "5Y": {
+        "cagr_pct": 12.8,
+        "total_return_pct": 82.8,
+        "max_drawdown_pct": -45.2,
+        "volatility_annualised_pct": 21.4,
+        "start_date": "2020-01-01",
+        "end_date": "2024-12-31",
+        "start_nav": 27160.0,
+        "end_nav": 49654.0
+      },
+      "7Y": {
+        "cagr_pct": 10.6,
+        "total_return_pct": 99.1,
+        "max_drawdown_pct": -45.2,
+        "volatility_annualised_pct": 20.9,
+        "start_date": "2018-01-01",
+        "end_date": "2024-12-31",
+        "start_nav": 24942.0,
+        "end_nav": 49654.0
+      },
+      "10Y": {
+        "cagr_pct": 10.2,
+        "total_return_pct": 163.9,
+        "max_drawdown_pct": -45.2,
+        "volatility_annualised_pct": 20.6,
+        "start_date": "2015-01-01",
+        "end_date": "2024-12-31",
+        "start_nav": 18817.0,
+        "end_nav": 49654.0
+      }
+    }
+  }
+}

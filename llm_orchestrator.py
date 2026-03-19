@@ -1,0 +1,566 @@
+# ==============================================================================
+# llm_orchestrator.py
+# AI Money Mentor — LangChain Orchestration Layer
+# ------------------------------------------------------------------------------
+# ARCHITECTURE CONTRACT:
+#   • This module's ONLY jobs are:
+#       1. Classify user intent into a typed enum
+#       2. Extract structured financial variables from natural language
+#       3. Wrap deterministic quant results in natural language for the user
+#   • This module does NOT do any math. Ever.
+#   • All variable extraction uses Pydantic + `with_structured_output` so
+#     LangChain returns typed objects, not raw strings we have to parse.
+#   • Every chain has a hardcoded system prompt that forbids the LLM from
+#     inventing financial figures.
+# ==============================================================================
+
+from __future__ import annotations
+
+import logging
+import os
+from enum import Enum
+from typing import Optional
+
+from dotenv import load_dotenv
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_groq import ChatGroq
+from pydantic import BaseModel, Field, field_validator
+
+# Import our typed result dataclasses so the response generator is type-safe
+from quant_engine import (
+    RollingReturnResult,
+    SIPProjectionResult,
+    XIRRResult,
+)
+
+load_dotenv()
+logger = logging.getLogger(__name__)
+
+# ============================================================================ #
+#  SECTION 1 — LLM CLIENT (single shared instance)                             #
+# ============================================================================ #
+
+def _build_llm(temperature: float = 0.0) -> ChatGroq:
+    """
+    Build and return a ChatGroq client.
+    Free tier at console.groq.com — no billing required.
+    temperature=0 for extraction (deterministic), slightly higher for generation.
+    """
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        raise EnvironmentError(
+            "GROQ_API_KEY not found. Create a free key at console.groq.com "
+            "and add it to your .env file as: GROQ_API_KEY=gsk_..."
+        )
+    return ChatGroq(
+        model="llama-3.3-70b-versatile",
+        temperature=temperature,
+        api_key=api_key,
+        max_retries=2,
+        timeout=30,
+    )
+
+
+# ============================================================================ #
+#  SECTION 2 — INTENT CLASSIFICATION                                           #
+# ============================================================================ #
+
+class Intent(str, Enum):
+    """All supported user intents. Maps 1:1 to a module in the app."""
+    HEALTH_SCORE    = "HEALTH_SCORE"     # → quant_engine.calculate_money_health_score
+    FIRE_PLANNER    = "FIRE_PLANNER"     # → fire_planner.build_fire_roadmap
+    MF_XRAY         = "MF_XRAY"          # → mf_xray (triggered by PDF upload)
+    MARKET_DATA     = "MARKET_DATA"      # → quant_engine.fetch_historical_rolling_return
+    SIP_PROJECTION  = "SIP_PROJECTION"   # → quant_engine.project_sip_corpus
+    GENERAL_QUERY   = "GENERAL_QUERY"    # → plain LLM response (no math needed)
+    CLARIFY         = "CLARIFY"          # → ask user for missing variables
+
+
+class IntentResult(BaseModel):
+    """Structured output for intent classification."""
+    intent: Intent = Field(description="The primary financial intent of the user's message.")
+    confidence: float = Field(
+        description="Confidence score between 0.0 and 1.0.",
+        ge=0.0, le=1.0
+    )
+    missing_info: list[str] = Field(
+        default_factory=list,
+        description=(
+            "List of critical pieces of information missing to fulfil this intent. "
+            "E.g. ['monthly_income', 'target_corpus']. Empty if enough info is available."
+        )
+    )
+    reasoning: str = Field(description="One-sentence explanation of why this intent was chosen.")
+
+
+_INTENT_SYSTEM = """You are an intent classifier for an Indian financial advisory chatbot.
+Classify the user's message into exactly ONE intent from this list:
+
+- HEALTH_SCORE    : User wants to know their financial health, get a score, or assess their finances overall.
+- FIRE_PLANNER    : User mentions retirement, financial independence, FIRE, saving for a goal, or building a corpus.
+- MF_XRAY         : User wants to analyse mutual fund portfolio, mentions CAMS, NAV, returns, overlap, or expense ratio.
+- MARKET_DATA     : User asks about Nifty 50, Sensex, index returns, market performance, or specific fund NAVs.
+- SIP_PROJECTION  : User asks "how much SIP do I need", "will my SIP be enough", or wants to project SIP growth.
+- GENERAL_QUERY   : General financial question that doesn't require personal data or computation.
+- CLARIFY         : User's message is ambiguous or missing critical data; you need to ask a follow-up.
+
+PRIORITY RULES (apply in order, highest priority first):
+1. If the message contains income/expenses/salary AND any of (emergency fund, insurance, debt, savings) → HEALTH_SCORE. Always. Even if CAMS was mentioned before.
+2. If the message explicitly says "analyse", "CAMS", "statement", "portfolio", "my funds" → MF_XRAY.
+3. If the message mentions retirement age, FIRE, "retire at", "corpus" → FIRE_PLANNER.
+4. If the message asks about Nifty, Sensex, index, market returns → MARKET_DATA.
+5. If the message asks about SIP amounts or projections → SIP_PROJECTION.
+6. Never let conversation history override these rules. Each message is classified on its OWN content.
+
+Rules:
+- Never invent financial data. Only classify and identify missing information.
+- If the user provides SOME data but not all, still classify to the best intent and list what's missing.
+- Respond ONLY with the structured JSON output. No prose."""
+
+_INTENT_HUMAN = "User message: {user_message}\n\nConversation so far:\n{history}"
+
+
+def detect_intent(user_message: str, history: str = "") -> IntentResult:
+    """
+    Classify the user's message into a typed Intent.
+
+    Parameters
+    ----------
+    user_message : str
+        The raw user message from the chat input.
+    history : str
+        Last 3-4 turns of conversation, formatted as a string, for context.
+
+    Returns
+    -------
+    IntentResult — typed Pydantic model, never a raw dict.
+
+    Raises
+    ------
+    RuntimeError if the LLM call fails after retries.
+    """
+    llm = _build_llm(temperature=0.0)
+    structured_llm = llm.with_structured_output(IntentResult)
+
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", _INTENT_SYSTEM),
+        ("human", _INTENT_HUMAN),
+    ])
+    chain = prompt | structured_llm
+
+    try:
+        result: IntentResult = chain.invoke({
+            "user_message": user_message,
+            "history": history or "No prior conversation.",
+        })
+        logger.info("Intent detected: %s (confidence=%.2f)", result.intent, result.confidence)
+        return result
+    except Exception as exc:
+        logger.error("Intent detection failed: %s", exc)
+        raise RuntimeError(f"Intent classification failed: {exc}") from exc
+
+
+# ============================================================================ #
+#  SECTION 3 — VARIABLE EXTRACTION (one Pydantic model per intent)            #
+# ============================================================================ #
+
+# ---------------------------------------------------------------------------- #
+#  3a. FIRE Planner Parameters                                                  #
+# ---------------------------------------------------------------------------- #
+
+class FIREParams(BaseModel):
+    """Parameters extracted from conversation for the FIRE Path Planner."""
+    current_age: int = Field(description="User's current age in years.", ge=18, le=80)
+    retirement_age: int = Field(description="Target retirement age.", ge=30, le=90)
+    monthly_income: float = Field(description="Current gross monthly income in INR.", gt=0)
+    monthly_expenses: float = Field(description="Current monthly expenses in INR.", gt=0)
+    current_savings: float = Field(
+        default=0.0,
+        description="Existing savings/investments corpus in INR. Default 0 if not mentioned."
+    )
+    target_corpus: Optional[float] = Field(
+        default=None,
+        description=(
+            "Target retirement corpus in INR. If not explicitly stated, set null — "
+            "the quant engine will calculate it from expenses and life expectancy."
+        )
+    )
+    monthly_sip: Optional[float] = Field(
+        default=None,
+        description="Current monthly SIP amount in INR. Null if not mentioned."
+    )
+    assumed_inflation_pct: float = Field(
+        default=6.0,
+        description="Assumed annual inflation rate in %. Default 6.0 for India.",
+        ge=2.0, le=15.0
+    )
+    assumed_return_pct: float = Field(
+        default=12.0,
+        description=(
+            "Assumed annual portfolio return in %. Default 12.0 for a balanced Indian "
+            "equity-heavy portfolio. DO NOT change this unless the user specifies."
+        ),
+        ge=1.0, le=30.0
+    )
+    step_up_pct: float = Field(
+        default=10.0,
+        description="Annual SIP step-up percentage. Default 10% (common in India).",
+        ge=0.0, le=50.0
+    )
+
+    @field_validator("retirement_age")
+    @classmethod
+    def retirement_after_current(cls, v: int, info) -> int:
+        if "current_age" in info.data and v <= info.data["current_age"]:
+            raise ValueError("retirement_age must be greater than current_age.")
+        return v
+
+
+class HealthScoreParams(BaseModel):
+    """Parameters for the Money Health Score (6-dimension assessment)."""
+    monthly_income: float = Field(description="Gross monthly income in INR.", gt=0)
+    monthly_expenses: float = Field(description="Monthly expenses in INR.", gt=0)
+    emergency_fund: float = Field(
+        default=0.0,
+        description="Total liquid emergency fund in INR (savings account, FD, liquid MF)."
+    )
+    total_insurance_cover: float = Field(
+        default=0.0,
+        description="Total life insurance cover (sum assured) in INR."
+    )
+    total_debt_emi: float = Field(
+        default=0.0,
+        description="Total monthly debt EMI payments (home loan, car loan, personal loan) in INR."
+    )
+    equity_pct: float = Field(
+        default=0.0,
+        description="% of total investments in equity (stocks, equity MF).",
+        ge=0.0, le=100.0
+    )
+    debt_pct: float = Field(
+        default=0.0,
+        description="% of investments in debt (FD, debt MF, bonds).",
+        ge=0.0, le=100.0
+    )
+    gold_pct: float = Field(
+        default=0.0,
+        description="% of investments in gold (physical, SGB, gold ETF).",
+        ge=0.0, le=100.0
+    )
+    other_pct: float = Field(
+        default=0.0,
+        description="% of investments in other assets (real estate, etc.).",
+        ge=0.0, le=100.0
+    )
+    epf_ppf_nps_monthly: float = Field(
+        default=0.0,
+        description="Total monthly contribution to EPF + PPF + NPS in INR."
+    )
+    tax_saving_investments: float = Field(
+        default=0.0,
+        description="Annual amount invested in 80C/80D instruments in INR."
+    )
+    gross_annual_income: float = Field(
+        description="Gross annual income in INR.", gt=0
+    )
+
+
+class SIPQueryParams(BaseModel):
+    """Parameters for a standalone SIP projection query."""
+    monthly_sip: float = Field(description="Monthly SIP amount in INR.", gt=0)
+    years: int = Field(description="Investment horizon in years.", ge=1, le=50)
+    assumed_cagr_pct: float = Field(
+        default=12.0,
+        description="Assumed annual return. Default 12.0%.",
+        ge=1.0, le=30.0
+    )
+    target_corpus: Optional[float] = Field(
+        default=None,
+        description="Target corpus in INR, if user specifies a goal. Null otherwise."
+    )
+    step_up_pct: float = Field(
+        default=0.0,
+        description="Annual SIP increase %. Default 0 unless user mentions top-up.",
+        ge=0.0, le=50.0
+    )
+
+
+class MarketDataParams(BaseModel):
+    """Parameters for a market data / historical return query."""
+    ticker_or_alias: str = Field(
+        description=(
+            "The asset to look up. Use these exact aliases where applicable: "
+            "'nifty50', 'sensex', 'nifty bank', 'nifty it', 'gold'. "
+            "For ETFs, use the yfinance ticker (e.g. 'NIFTYBEES.NS')."
+        )
+    )
+    period: str = Field(
+        default="5Y",
+        description="Historical period. Must be one of: '1Y', '3Y', '5Y', '7Y', '10Y'."
+    )
+
+    @field_validator("period")
+    @classmethod
+    def valid_period(cls, v: str) -> str:
+        valid = {"1Y", "3Y", "5Y", "7Y", "10Y"}
+        v = v.upper().strip()
+        if v not in valid:
+            raise ValueError(f"Period must be one of {valid}")
+        return v
+
+
+# ============================================================================ #
+#  SECTION 4 — EXTRACTION CHAINS (LangChain → Pydantic)                       #
+# ============================================================================ #
+
+_EXTRACTION_SYSTEM = """You are a financial data extractor for an Indian financial advisory chatbot.
+
+CRITICAL RULES:
+1. Extract ONLY values the user has explicitly stated. NEVER invent or assume financial figures.
+2. For unmentioned optional fields, use the default values defined in the schema.
+3. All monetary values must be in INR (Indian Rupees). If the user says "2 lakh", convert to 200000.
+4. If a required field cannot be extracted, output the field as null and flag it.
+5. Do NOT provide advice, commentary, or calculations. Only extract and structure data.
+
+Common Indian number conversions:
+- "1 lakh" = 100,000
+- "10 lakh" = 1,000,000
+- "1 crore" = 10,000,000
+- "50K" = 50,000"""
+
+
+def extract_fire_params(user_message: str, history: str = "") -> FIREParams:
+    """Extract FIRE Planner parameters from user conversation."""
+    llm = _build_llm(temperature=0.0)
+    structured_llm = llm.with_structured_output(FIREParams)
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", _EXTRACTION_SYSTEM + "\n\nExtract FIREParams from the conversation."),
+        ("human", "Conversation:\n{history}\n\nLatest message: {user_message}"),
+    ])
+    try:
+        return (prompt | structured_llm).invoke({
+            "user_message": user_message, "history": history
+        })
+    except Exception as exc:
+        logger.error("FIREParams extraction failed: %s", exc)
+        raise RuntimeError(f"Could not extract FIRE parameters: {exc}") from exc
+
+
+def extract_health_params(user_message: str, history: str = "") -> HealthScoreParams:
+    """Extract Money Health Score parameters from user conversation."""
+    llm = _build_llm(temperature=0.0)
+    structured_llm = llm.with_structured_output(HealthScoreParams)
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", _EXTRACTION_SYSTEM + "\n\nExtract HealthScoreParams from the conversation."),
+        ("human", "Conversation:\n{history}\n\nLatest message: {user_message}"),
+    ])
+    try:
+        return (prompt | structured_llm).invoke({
+            "user_message": user_message, "history": history
+        })
+    except Exception as exc:
+        logger.error("HealthScoreParams extraction failed: %s", exc)
+        raise RuntimeError(f"Could not extract Health Score parameters: {exc}") from exc
+
+
+def extract_sip_params(user_message: str, history: str = "") -> SIPQueryParams:
+    """Extract SIP Projection parameters from user conversation."""
+    llm = _build_llm(temperature=0.0)
+    structured_llm = llm.with_structured_output(SIPQueryParams)
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", _EXTRACTION_SYSTEM + "\n\nExtract SIPQueryParams from the conversation."),
+        ("human", "Conversation:\n{history}\n\nLatest message: {user_message}"),
+    ])
+    try:
+        return (prompt | structured_llm).invoke({
+            "user_message": user_message, "history": history
+        })
+    except Exception as exc:
+        logger.error("SIPQueryParams extraction failed: %s", exc)
+        raise RuntimeError(f"Could not extract SIP parameters: {exc}") from exc
+
+
+def extract_market_params(user_message: str, history: str = "") -> MarketDataParams:
+    """Extract Market Data query parameters from user conversation."""
+    llm = _build_llm(temperature=0.0)
+    structured_llm = llm.with_structured_output(MarketDataParams)
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", _EXTRACTION_SYSTEM + "\n\nExtract MarketDataParams from the conversation."),
+        ("human", "Conversation:\n{history}\n\nLatest message: {user_message}"),
+    ])
+    try:
+        return (prompt | structured_llm).invoke({
+            "user_message": user_message, "history": history
+        })
+    except Exception as exc:
+        logger.error("MarketDataParams extraction failed: %s", exc)
+        raise RuntimeError(f"Could not extract market query parameters: {exc}") from exc
+
+
+# ============================================================================ #
+#  SECTION 5 — RESPONSE GENERATION (quant result → natural language)           #
+# ============================================================================ #
+
+_RESPONSE_SYSTEM = """You are an AI Money Mentor — a warm, precise, and empathetic Indian financial advisor.
+You have just been given structured results computed by a deterministic financial engine.
+Your job is to explain these results to the user in clear, natural language.
+
+STRICT RULES:
+1. NEVER change, round, or reinterpret the numbers provided to you. Use them exactly.
+2. Use Indian number formatting: ₹10,00,000 not ₹1,000,000. Lakh/Crore notation is encouraged.
+3. Be encouraging but honest. If the outlook is poor, say so clearly with actionable next steps.
+4. Keep responses under 300 words unless the result is a detailed roadmap.
+5. Always end with ONE specific, actionable recommendation.
+6. Do NOT mention "the quant engine", "the model", or any internal system names."""
+
+_RESPONSE_HUMAN = """User's original question: {user_message}
+
+Computed result (use these numbers exactly):
+{result_json}
+
+Additional context: {context}
+
+Write a helpful, natural response explaining these results to the user."""
+
+
+def generate_response(
+    user_message: str,
+    result_json: str,
+    context: str = "",
+) -> str:
+    """
+    Wrap a JSON-serialised quant result in natural language.
+
+    Parameters
+    ----------
+    user_message : str
+        The original user question (for contextual tone matching).
+    result_json : str
+        JSON string of the quant result. Use dataclass.__dict__ or model_dump().
+    context : str
+        Any additional context (e.g., "User is 28 years old and risk-tolerant.").
+
+    Returns
+    -------
+    str — formatted natural language response ready for st.chat_message().
+    """
+    llm = _build_llm(temperature=0.3)  # Slight temperature for natural phrasing
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", _RESPONSE_SYSTEM),
+        ("human", _RESPONSE_HUMAN),
+    ])
+    chain = prompt | llm
+
+    try:
+        response = chain.invoke({
+            "user_message": user_message,
+            "result_json": result_json,
+            "context": context or "No additional context.",
+        })
+        return response.content
+    except Exception as exc:
+        logger.error("Response generation failed: %s", exc)
+        # Graceful degradation — return a raw summary instead of crashing
+        return (
+            f"I've calculated your results. Here's the raw output:\n\n"
+            f"```\n{result_json}\n```\n\n"
+            f"_(Response formatting failed: {exc})_"
+        )
+
+
+def generate_clarification_request(
+    user_message: str,
+    missing_fields: list[str],
+    intent: Intent,
+) -> str:
+    """
+    Ask the user for specific missing information needed to proceed.
+    Generates a natural, conversational follow-up question.
+    """
+    llm = _build_llm(temperature=0.4)
+
+    field_descriptions = {
+        "current_age": "your current age",
+        "retirement_age": "your target retirement age",
+        "monthly_income": "your monthly income",
+        "monthly_expenses": "your monthly expenses",
+        "current_savings": "your existing savings or investments",
+        "target_corpus": "your target retirement corpus / goal amount",
+        "monthly_sip": "your current monthly SIP amount",
+        "emergency_fund": "your emergency fund balance",
+        "total_insurance_cover": "your total life insurance cover",
+        "total_debt_emi": "your total monthly EMI payments",
+        "gross_annual_income": "your annual gross income",
+    }
+
+    missing_readable = [
+        field_descriptions.get(f, f.replace("_", " "))
+        for f in missing_fields
+    ]
+
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", (
+            "You are a friendly Indian financial advisor collecting information from a user. "
+            "Ask for the missing information in a warm, conversational way. "
+            "Do NOT ask for all fields in one overwhelming list — pick the 1-2 most critical ones first. "
+            "Keep it under 60 words."
+        )),
+        ("human", (
+            f"User wants: {intent.value}\n"
+            f"User said: {user_message}\n"
+            f"Missing info: {', '.join(missing_readable)}\n"
+            "Ask a natural follow-up question to get this info."
+        )),
+    ])
+
+    try:
+        response = (prompt | llm).invoke({})
+        return response.content
+    except Exception as exc:
+        logger.warning("Clarification generation failed, using fallback: %s", exc)
+        return (
+            f"To help you with this, I need a bit more information. "
+            f"Could you please share {missing_readable[0]}?"
+        )
+
+
+def generate_general_response(user_message: str, history: str = "") -> str:
+    """
+    Handle GENERAL_QUERY intents — financial Q&A that doesn't require personal data.
+    Still governed by the no-hallucination system prompt.
+    """
+    llm = _build_llm(temperature=0.3)
+    messages = [
+        SystemMessage(content=(
+            "You are an AI Money Mentor — a knowledgeable Indian financial advisor. "
+            "Answer the user's general financial question clearly and accurately. "
+            "Focus on Indian financial products: mutual funds, EPF, PPF, NPS, ELSS, SGBs, etc. "
+            "If unsure, say so. Never invent statistics or returns. Keep it under 200 words."
+        )),
+        HumanMessage(content=f"Conversation so far:\n{history}\n\nQuestion: {user_message}"),
+    ]
+    try:
+        return llm.invoke(messages).content
+    except Exception as exc:
+        logger.error("General response failed: %s", exc)
+        return "I'm having trouble connecting right now. Please try again in a moment."
+
+
+# ============================================================================ #
+#  SECTION 6 — MAIN ORCHESTRATION FUNCTION (called by app.py)                 #
+# ============================================================================ #
+
+def format_history(messages: list[dict]) -> str:
+    """
+    Format Streamlit session_state.messages into a plain-text string
+    for LangChain prompt context. Takes the last 6 messages (3 turns).
+    """
+    recent = messages[-6:] if len(messages) > 6 else messages
+    lines = []
+    for msg in recent:
+        role = "User" if msg["role"] == "user" else "Assistant"
+        # Truncate very long messages (e.g. if a chart was embedded)
+        content = msg["content"][:400] if len(msg["content"]) > 400 else msg["content"]
+        lines.append(f"{role}: {content}")
+    return "\n".join(lines)

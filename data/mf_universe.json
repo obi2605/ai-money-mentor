@@ -1,0 +1,381 @@
+[
+  {
+    "scheme_name": "HDFC Top 100 Fund - Growth Option",
+    "isin": "INF179K01CX3",
+    "amc": "HDFC Mutual Fund",
+    "category": "Large Cap",
+    "sub_category": "Large Cap Fund",
+    "benchmark": "NIFTY 100 TRI",
+    "expense_ratio_pct": 1.64,
+    "direct_expense_ratio_pct": 0.90,
+    "aum_cr": 35000,
+    "top_holdings": [
+      "HDFC Bank", "ICICI Bank", "Infosys", "Reliance Industries",
+      "Tata Consultancy Services", "Larsen & Toubro", "Axis Bank",
+      "Kotak Mahindra Bank", "State Bank of India", "ITC"
+    ]
+  },
+  {
+    "scheme_name": "HDFC Top 100 Fund - Direct Plan - Growth",
+    "isin": "INF179K01DL6",
+    "amc": "HDFC Mutual Fund",
+    "category": "Large Cap",
+    "sub_category": "Large Cap Fund",
+    "benchmark": "NIFTY 100 TRI",
+    "expense_ratio_pct": 0.90,
+    "direct_expense_ratio_pct": 0.90,
+    "aum_cr": 35000,
+    "top_holdings": [
+      "HDFC Bank", "ICICI Bank", "Infosys", "Reliance Industries",
+      "Tata Consultancy Services", "Larsen & Toubro", "Axis Bank",
+      "Kotak Mahindra Bank", "State Bank of India", "ITC"
+    ]
+  },
+  {
+    "scheme_name": "Mirae Asset Large Cap Fund - Growth",
+    "isin": "INF769K01EW0",
+    "amc": "Mirae Asset Mutual Fund",
+    "category": "Large Cap",
+    "sub_category": "Large Cap Fund",
+    "benchmark": "NIFTY 100 TRI",
+    "expense_ratio_pct": 1.54,
+    "direct_expense_ratio_pct": 0.54,
+    "aum_cr": 38000,
+    "top_holdings": [
+      "HDFC Bank", "ICICI Bank", "Infosys", "Reliance Industries",
+      "Tata Consultancy Services", "Axis Bank", "Bharti Airtel",
+      "Kotak Mahindra Bank", "Larsen & Toubro", "Sun Pharmaceutical"
+    ]
+  },
+  {
+    "scheme_name": "Mirae Asset Large Cap Fund - Direct Plan - Growth",
+    "isin": "INF769K01010",
+    "amc": "Mirae Asset Mutual Fund",
+    "category": "Large Cap",
+    "sub_category": "Large Cap Fund",
+    "benchmark": "NIFTY 100 TRI",
+    "expense_ratio_pct": 0.54,
+    "direct_expense_ratio_pct": 0.54,
+    "aum_cr": 38000,
+    "top_holdings": [
+      "HDFC Bank", "ICICI Bank", "Infosys", "Reliance Industries",
+      "Tata Consultancy Services", "Axis Bank", "Bharti Airtel",
+      "Kotak Mahindra Bank", "Larsen & Toubro", "Sun Pharmaceutical"
+    ]
+  },
+  {
+    "scheme_name": "Axis Bluechip Fund - Growth",
+    "isin": "INF846K01DP8",
+    "amc": "Axis Mutual Fund",
+    "category": "Large Cap",
+    "sub_category": "Large Cap Fund",
+    "benchmark": "NIFTY 50 TRI",
+    "expense_ratio_pct": 1.55,
+    "direct_expense_ratio_pct": 0.47,
+    "aum_cr": 45000,
+    "top_holdings": [
+      "Bajaj Finance", "ICICI Bank", "Infosys", "Tata Consultancy Services",
+      "Avenue Supermarts", "Kotak Mahindra Bank", "HDFC Bank",
+      "Pidilite Industries", "Nestle India", "Asian Paints"
+    ]
+  },
+  {
+    "scheme_name": "Axis Bluechip Fund - Direct Plan - Growth",
+    "isin": "INF846K01EL5",
+    "amc": "Axis Mutual Fund",
+    "category": "Large Cap",
+    "sub_category": "Large Cap Fund",
+    "benchmark": "NIFTY 50 TRI",
+    "expense_ratio_pct": 0.47,
+    "direct_expense_ratio_pct": 0.47,
+    "aum_cr": 45000,
+    "top_holdings": [
+      "Bajaj Finance", "ICICI Bank", "Infosys", "Tata Consultancy Services",
+      "Avenue Supermarts", "Kotak Mahindra Bank", "HDFC Bank",
+      "Pidilite Industries", "Nestle India", "Asian Paints"
+    ]
+  },
+  {
+    "scheme_name": "Parag Parikh Flexi Cap Fund - Growth",
+    "isin": "INF879O01027",
+    "amc": "PPFAS Mutual Fund",
+    "category": "Flexi Cap",
+    "sub_category": "Flexi Cap Fund",
+    "benchmark": "NIFTY 500 TRI",
+    "expense_ratio_pct": 1.32,
+    "direct_expense_ratio_pct": 0.64,
+    "aum_cr": 80000,
+    "top_holdings": [
+      "HDFC Bank", "ITC", "Coal India", "Power Grid Corporation",
+      "Alphabet Inc (Google)", "Meta Platforms", "Microsoft",
+      "Amazon", "Bajaj Holdings", "ICICI Bank"
+    ]
+  },
+  {
+    "scheme_name": "Parag Parikh Flexi Cap Fund - Direct Plan - Growth",
+    "isin": "INF879O01019",
+    "amc": "PPFAS Mutual Fund",
+    "category": "Flexi Cap",
+    "sub_category": "Flexi Cap Fund",
+    "benchmark": "NIFTY 500 TRI",
+    "expense_ratio_pct": 0.64,
+    "direct_expense_ratio_pct": 0.64,
+    "aum_cr": 80000,
+    "top_holdings": [
+      "HDFC Bank", "ITC", "Coal India", "Power Grid Corporation",
+      "Alphabet Inc (Google)", "Meta Platforms", "Microsoft",
+      "Amazon", "Bajaj Holdings", "ICICI Bank"
+    ]
+  },
+  {
+    "scheme_name": "SBI Small Cap Fund - Growth",
+    "isin": "INF200K01RV6",
+    "amc": "SBI Mutual Fund",
+    "category": "Small Cap",
+    "sub_category": "Small Cap Fund",
+    "benchmark": "NIFTY Smallcap 250 TRI",
+    "expense_ratio_pct": 1.68,
+    "direct_expense_ratio_pct": 0.74,
+    "aum_cr": 28000,
+    "top_holdings": [
+      "Garware Technical Fibres", "Techno Electric & Engineering",
+      "Blue Star", "Chalet Hotels", "Elgi Equipments",
+      "Safari Industries", "Finolex Cables", "Galaxy Surfactants",
+      "ESAB India", "Mold-Tek Packaging"
+    ]
+  },
+  {
+    "scheme_name": "SBI Small Cap Fund - Direct Plan - Growth",
+    "isin": "INF200K01RU8",
+    "amc": "SBI Mutual Fund",
+    "category": "Small Cap",
+    "sub_category": "Small Cap Fund",
+    "benchmark": "NIFTY Smallcap 250 TRI",
+    "expense_ratio_pct": 0.74,
+    "direct_expense_ratio_pct": 0.74,
+    "aum_cr": 28000,
+    "top_holdings": [
+      "Garware Technical Fibres", "Techno Electric & Engineering",
+      "Blue Star", "Chalet Hotels", "Elgi Equipments",
+      "Safari Industries", "Finolex Cables", "Galaxy Surfactants",
+      "ESAB India", "Mold-Tek Packaging"
+    ]
+  },
+  {
+    "scheme_name": "Nippon India Small Cap Fund - Growth",
+    "isin": "INF204K01E34",
+    "amc": "Nippon India Mutual Fund",
+    "category": "Small Cap",
+    "sub_category": "Small Cap Fund",
+    "benchmark": "NIFTY Smallcap 250 TRI",
+    "expense_ratio_pct": 1.55,
+    "direct_expense_ratio_pct": 0.69,
+    "aum_cr": 55000,
+    "top_holdings": [
+      "KPIT Technologies", "Tube Investments of India", "Bharat Heavy Electricals",
+      "Multi Commodity Exchange", "Dixon Technologies",
+      "Karur Vysya Bank", "Navin Fluorine International",
+      "Apar Industries", "Techno Electric & Engineering", "Elgi Equipments"
+    ]
+  },
+  {
+    "scheme_name": "HDFC Mid-Cap Opportunities Fund - Growth",
+    "isin": "INF179K01CZ8",
+    "amc": "HDFC Mutual Fund",
+    "category": "Mid Cap",
+    "sub_category": "Mid Cap Fund",
+    "benchmark": "NIFTY Midcap 150 TRI",
+    "expense_ratio_pct": 1.61,
+    "direct_expense_ratio_pct": 0.84,
+    "aum_cr": 72000,
+    "top_holdings": [
+      "Cholamandalam Investment", "Max Financial Services", "Persistent Systems",
+      "Tube Investments", "Bharat Forge", "Coforge", "Voltas",
+      "Apollo Hospitals", "Mphasis", "Indian Hotels"
+    ]
+  },
+  {
+    "scheme_name": "Kotak Emerging Equity Fund - Growth",
+    "isin": "INF174K01EO5",
+    "amc": "Kotak Mahindra Mutual Fund",
+    "category": "Mid Cap",
+    "sub_category": "Mid Cap Fund",
+    "benchmark": "NIFTY Midcap 150 TRI",
+    "expense_ratio_pct": 1.62,
+    "direct_expense_ratio_pct": 0.45,
+    "aum_cr": 45000,
+    "top_holdings": [
+      "Persistent Systems", "Coforge", "Bharat Forge", "Max Healthcare",
+      "Apollo Hospitals", "Cholamandalam Investment",
+      "Indian Hotels", "Tube Investments", "Voltas", "Schaeffler India"
+    ]
+  },
+  {
+    "scheme_name": "Quant Small Cap Fund - Growth",
+    "isin": "INF966L01036",
+    "amc": "Quant Mutual Fund",
+    "category": "Small Cap",
+    "sub_category": "Small Cap Fund",
+    "benchmark": "NIFTY Smallcap 250 TRI",
+    "expense_ratio_pct": 1.60,
+    "direct_expense_ratio_pct": 0.64,
+    "aum_cr": 22000,
+    "top_holdings": [
+      "IRB Infrastructure", "Reliance Industries", "ONGC",
+      "Jio Financial Services", "Mazagon Dock", "BHEL",
+      "HUDCO", "Hindustan Copper", "NMDC", "SJVN"
+    ]
+  },
+  {
+    "scheme_name": "ICICI Prudential Technology Fund - Growth",
+    "isin": "INF109K01BV1",
+    "amc": "ICICI Prudential Mutual Fund",
+    "category": "Sectoral",
+    "sub_category": "Sectoral Fund - Technology",
+    "benchmark": "NIFTY IT TRI",
+    "expense_ratio_pct": 1.93,
+    "direct_expense_ratio_pct": 0.98,
+    "aum_cr": 12000,
+    "top_holdings": [
+      "Infosys", "Tata Consultancy Services", "HCL Technologies",
+      "Wipro", "Tech Mahindra", "LTIMindtree", "Mphasis",
+      "Coforge", "Persistent Systems", "Birlasoft"
+    ]
+  },
+  {
+    "scheme_name": "Axis ELSS Tax Saver Fund - Growth",
+    "isin": "INF846K01EH3",
+    "amc": "Axis Mutual Fund",
+    "category": "ELSS",
+    "sub_category": "ELSS (Tax Saving)",
+    "benchmark": "NIFTY 500 TRI",
+    "expense_ratio_pct": 1.55,
+    "direct_expense_ratio_pct": 0.55,
+    "aum_cr": 35000,
+    "top_holdings": [
+      "Bajaj Finance", "ICICI Bank", "Infosys", "Tata Consultancy Services",
+      "Kotak Mahindra Bank", "HDFC Bank", "Pidilite Industries",
+      "Avenue Supermarts", "Nestle India", "Divi's Laboratories"
+    ]
+  },
+  {
+    "scheme_name": "Mirae Asset ELSS Tax Saver Fund - Growth",
+    "isin": "INF769K01166",
+    "amc": "Mirae Asset Mutual Fund",
+    "category": "ELSS",
+    "sub_category": "ELSS (Tax Saving)",
+    "benchmark": "NIFTY 500 TRI",
+    "expense_ratio_pct": 1.58,
+    "direct_expense_ratio_pct": 0.37,
+    "aum_cr": 25000,
+    "top_holdings": [
+      "HDFC Bank", "ICICI Bank", "Infosys", "Reliance Industries",
+      "Tata Consultancy Services", "Axis Bank", "Bharti Airtel",
+      "Kotak Mahindra Bank", "Larsen & Toubro", "Bajaj Finance"
+    ]
+  },
+  {
+    "scheme_name": "HDFC Balanced Advantage Fund - Growth",
+    "isin": "INF179K01CE3",
+    "amc": "HDFC Mutual Fund",
+    "category": "Hybrid",
+    "sub_category": "Balanced Advantage Fund",
+    "benchmark": "NIFTY 50 Hybrid Composite Debt 50:50 Index",
+    "expense_ratio_pct": 1.67,
+    "direct_expense_ratio_pct": 0.84,
+    "aum_cr": 90000,
+    "top_holdings": [
+      "HDFC Bank", "ICICI Bank", "Infosys", "Reliance Industries",
+      "Larsen & Toubro", "Tata Consultancy Services",
+      "Government Securities", "State Bank of India", "Axis Bank", "ITC"
+    ]
+  },
+  {
+    "scheme_name": "ICICI Prudential Short Term Fund - Growth",
+    "isin": "INF109K01AD5",
+    "amc": "ICICI Prudential Mutual Fund",
+    "category": "Debt",
+    "sub_category": "Short Duration Fund",
+    "benchmark": "NIFTY Short Duration Debt Index",
+    "expense_ratio_pct": 0.94,
+    "direct_expense_ratio_pct": 0.38,
+    "aum_cr": 18000,
+    "top_holdings": []
+  },
+  {
+    "scheme_name": "SBI Liquid Fund - Growth",
+    "isin": "INF200K01QX4",
+    "amc": "SBI Mutual Fund",
+    "category": "Liquid",
+    "sub_category": "Liquid Fund",
+    "benchmark": "NIFTY Liquid Index",
+    "expense_ratio_pct": 0.29,
+    "direct_expense_ratio_pct": 0.15,
+    "aum_cr": 75000,
+    "top_holdings": []
+  },
+  {
+    "scheme_name": "NIFTYBEES - Nippon India ETF Nifty 50",
+    "isin": "INF204KB14I2",
+    "amc": "Nippon India Mutual Fund",
+    "category": "Index Fund",
+    "sub_category": "Index Fund - Nifty 50",
+    "benchmark": "NIFTY 50 TRI",
+    "expense_ratio_pct": 0.05,
+    "direct_expense_ratio_pct": 0.05,
+    "aum_cr": 25000,
+    "top_holdings": [
+      "HDFC Bank", "ICICI Bank", "Infosys", "Reliance Industries",
+      "Tata Consultancy Services", "ITC", "Larsen & Toubro",
+      "Axis Bank", "Kotak Mahindra Bank", "State Bank of India"
+    ]
+  },
+  {
+    "scheme_name": "UTI Nifty 50 Index Fund - Growth",
+    "isin": "INF789F01XW2",
+    "amc": "UTI Mutual Fund",
+    "category": "Index Fund",
+    "sub_category": "Index Fund - Nifty 50",
+    "benchmark": "NIFTY 50 TRI",
+    "expense_ratio_pct": 0.20,
+    "direct_expense_ratio_pct": 0.20,
+    "aum_cr": 18000,
+    "top_holdings": [
+      "HDFC Bank", "ICICI Bank", "Infosys", "Reliance Industries",
+      "Tata Consultancy Services", "ITC", "Larsen & Toubro",
+      "Axis Bank", "Kotak Mahindra Bank", "State Bank of India"
+    ]
+  },
+  {
+    "scheme_name": "Canara Robeco Emerging Equities Fund - Growth",
+    "isin": "INF760K01075",
+    "amc": "Canara Robeco Mutual Fund",
+    "category": "Large & Mid Cap",
+    "sub_category": "Large & Mid Cap Fund",
+    "benchmark": "NIFTY Large Midcap 250 TRI",
+    "expense_ratio_pct": 1.72,
+    "direct_expense_ratio_pct": 0.53,
+    "aum_cr": 22000,
+    "top_holdings": [
+      "HDFC Bank", "ICICI Bank", "Cholamandalam Investment",
+      "Persistent Systems", "Max Healthcare", "Bharat Forge",
+      "Coforge", "Apollo Hospitals", "Tata Motors", "Infosys"
+    ]
+  },
+  {
+    "scheme_name": "DSP Midcap Fund - Growth",
+    "isin": "INF740K01QO8",
+    "amc": "DSP Mutual Fund",
+    "category": "Mid Cap",
+    "sub_category": "Mid Cap Fund",
+    "benchmark": "NIFTY Midcap 150 TRI",
+    "expense_ratio_pct": 1.70,
+    "direct_expense_ratio_pct": 0.77,
+    "aum_cr": 20000,
+    "top_holdings": [
+      "Persistent Systems", "Indian Hotels", "Max Healthcare",
+      "Cholamandalam Investment", "Voltas", "Tube Investments",
+      "Bharat Forge", "Coforge", "Apollo Hospitals", "Schaeffler India"
+    ]
+  }
+]
