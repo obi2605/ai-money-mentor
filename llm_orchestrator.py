@@ -38,14 +38,14 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 # ============================================================================ #
-#  SECTION 1 — LLM CLIENT (single shared instance)                             #
+#  SECTION 1 — LLM CLIENT                                                      #
 # ============================================================================ #
 
 def _build_llm(temperature: float = 0.0) -> ChatGroq:
     """
-    Build and return a ChatGroq client.
+    Build and return a Groq client.
     Free tier at console.groq.com — no billing required.
-    temperature=0 for extraction (deterministic), slightly higher for generation.
+    temperature=0 for extraction (deterministic), higher for generation.
     """
     api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
@@ -122,33 +122,14 @@ _INTENT_HUMAN = "User message: {user_message}\n\nConversation so far:\n{history}
 
 
 def detect_intent(user_message: str, history: str = "") -> IntentResult:
-    """
-    Classify the user's message into a typed Intent.
-
-    Parameters
-    ----------
-    user_message : str
-        The raw user message from the chat input.
-    history : str
-        Last 3-4 turns of conversation, formatted as a string, for context.
-
-    Returns
-    -------
-    IntentResult — typed Pydantic model, never a raw dict.
-
-    Raises
-    ------
-    RuntimeError if the LLM call fails after retries.
-    """
+    """Classify the user's message into a typed Intent."""
     llm = _build_llm(temperature=0.0)
     structured_llm = llm.with_structured_output(IntentResult)
-
     prompt = ChatPromptTemplate.from_messages([
         ("system", _INTENT_SYSTEM),
         ("human", _INTENT_HUMAN),
     ])
     chain = prompt | structured_llm
-
     try:
         result: IntentResult = chain.invoke({
             "user_message": user_message,
@@ -177,7 +158,13 @@ class FIREParams(BaseModel):
     monthly_expenses: float = Field(description="Current monthly expenses in INR.", gt=0)
     current_savings: float = Field(
         default=0.0,
-        description="Existing savings/investments corpus in INR. Default 0 if not mentioned."
+        description=(
+            "TOTAL existing savings/investments corpus in INR. "
+            "This MUST be the SUM of ALL assets mentioned: mutual funds + FDs + SGBs + "
+            "PPF + NPS corpus + stocks + real estate + any other investments. "
+            "Example: '70L in MF, 12L in SGBs, 55L in NPS, 1.5Cr FD' → 70L+12L+55L+1.5Cr = 2,87,00,000. "
+            "Do NOT pick just one asset. Sum everything explicitly mentioned."
+        )
     )
     target_corpus: Optional[float] = Field(
         default=None,
@@ -223,43 +210,70 @@ class HealthScoreParams(BaseModel):
     monthly_expenses: float = Field(description="Monthly expenses in INR.", gt=0)
     emergency_fund: float = Field(
         default=0.0,
-        description="Total liquid emergency fund in INR (savings account, FD, liquid MF)."
+        description=(
+            "Total LIQUID emergency fund in INR — only highly liquid assets: "
+            "savings account, liquid MF, FD maturing within 1 year. "
+            "Do NOT include equity MF, NPS, EPF here."
+        )
     )
     total_insurance_cover: float = Field(
         default=0.0,
-        description="Total life insurance cover (sum assured) in INR."
+        description=(
+            "Total life insurance SUM ASSURED in INR (not premium, not annual payment). "
+            "Term plan cover + LIC sum assured. If only premium is mentioned, set 0."
+        )
     )
     total_debt_emi: float = Field(
         default=0.0,
-        description="Total monthly debt EMI payments (home loan, car loan, personal loan) in INR."
+        description=(
+            "Total MONTHLY EMI payments in INR. "
+            "Include: home loan EMI, car loan EMI, personal loan EMI, education loan EMI. "
+            "If user says 'education loan 12L over 5 years', EMI ≈ 12L/60 = 20,000/mo."
+        )
     )
     equity_pct: float = Field(
         default=0.0,
-        description="% of total investments in equity (stocks, equity MF).",
+        description=(
+            "% of total investments in equity (equity MF, stocks, ELSS). "
+            "Apply Rule B: if amounts given, calculate equity/total × 100."
+        ),
         ge=0.0, le=100.0
     )
     debt_pct: float = Field(
         default=0.0,
-        description="% of investments in debt (FD, debt MF, bonds).",
+        description=(
+            "% of investments in debt (FD, debt MF, EPF/PF corpus, NPS corpus, PPF, bonds). "
+            "Apply Rule B: if amounts given, calculate (FD+EPF+NPS+PPF+bonds)/total × 100."
+        ),
         ge=0.0, le=100.0
     )
     gold_pct: float = Field(
         default=0.0,
-        description="% of investments in gold (physical, SGB, gold ETF).",
+        description=(
+            "% of investments in gold (SGB, gold ETF, physical gold). "
+            "Apply Rule B: if amounts given, calculate gold/total × 100."
+        ),
         ge=0.0, le=100.0
     )
     other_pct: float = Field(
         default=0.0,
-        description="% of investments in other assets (real estate, etc.).",
+        description="% of investments in other assets (real estate, ULIPs, etc.).",
         ge=0.0, le=100.0
     )
     epf_ppf_nps_monthly: float = Field(
         default=0.0,
-        description="Total monthly contribution to EPF + PPF + NPS in INR."
+        description=(
+            "Total MONTHLY contributions to EPF + PPF + NPS in INR. "
+            "Apply Rule D: sum all mentioned. '60k PF + 24k NPS' = 84000."
+        )
     )
     tax_saving_investments: float = Field(
         default=0.0,
-        description="Annual amount invested in 80C/80D instruments in INR."
+        description=(
+            "ANNUAL amount across all 80C/80D eligible instruments in INR. "
+            "Apply Rule C: EPF_monthly×12 + NPS_monthly×12 + insurance_annual + ELSS_annual + PPF_annual. "
+            "Example: 60k/mo EPF + 24k/mo NPS + 36k/yr insurance = 1,044,000."
+        )
     )
     gross_annual_income: float = Field(
         description="Gross annual income in INR.", gt=0
@@ -317,17 +331,30 @@ class MarketDataParams(BaseModel):
 _EXTRACTION_SYSTEM = """You are a financial data extractor for an Indian financial advisory chatbot.
 
 CRITICAL RULES:
-1. Extract ONLY values the user has explicitly stated. NEVER invent or assume financial figures.
-2. For unmentioned optional fields, use the default values defined in the schema.
-3. All monetary values must be in INR (Indian Rupees). If the user says "2 lakh", convert to 200000.
-4. If a required field cannot be extracted, output the field as null and flag it.
-5. Do NOT provide advice, commentary, or calculations. Only extract and structure data.
+1. If the conversation starts with a [VERIFIED FACTS] block, USE THOSE VALUES EXACTLY.
+   Do NOT recalculate from the raw conversation — the verified block has already done the math.
+2. Extract ONLY values the user has explicitly stated. NEVER invent financial figures.
+3. For unmentioned optional fields, use schema defaults.
+4. All monetary values in INR. Convert: "1L"=100000, "10L"=1000000, "1Cr"=10000000, "50K"=50000.
+5. Do NOT provide advice or commentary. Only extract and structure data.
 
-Common Indian number conversions:
-- "1 lakh" = 100,000
-- "10 lakh" = 1,000,000
-- "1 crore" = 10,000,000
-- "50K" = 50,000"""
+━━━ RULE A: ASSET SUMMATION (current_savings) ━━━
+IF a [VERIFIED FACTS] block is present → use the TOTAL current_savings from it directly.
+IF no block → Step 1: list every asset mentioned anywhere. Step 2: sum them all.
+  Equity: MF, stocks, ELSS | Debt: FD, PPF, bonds | Retirement: EPF/PF corpus, NPS corpus | Gold: SGB, gold ETF
+  NEVER pick just one asset. Example: 70L MF + 12L SGB + 55L NPS + 1.5Cr FD + 80L PF = 3.67Cr
+
+━━━ RULE B: ALLOCATION % INFERENCE ━━━
+IF [VERIFIED FACTS] block present → use equity_pct / debt_pct / gold_pct from it.
+IF no block → calculate: equity_pct = equity_INR/total_INR × 100, etc.
+
+━━━ RULE C: TAX SAVING INVESTMENTS (annual 80C/80D) ━━━
+IF [VERIFIED FACTS] block present → use TOTAL tax_saving_investments from it.
+IF no block → sum: EPF_monthly×12 + NPS_monthly×12 + insurance_annual + ELSS + PPF
+
+━━━ RULE D: MONTHLY RETIREMENT CONTRIBUTIONS ━━━
+IF [VERIFIED FACTS] block present → use TOTAL epf_ppf_nps_monthly from it.
+IF no block → sum all monthly: EPF + NPS + PPF contributions."""
 
 
 def extract_fire_params(user_message: str, history: str = "") -> FIREParams:
@@ -335,8 +362,12 @@ def extract_fire_params(user_message: str, history: str = "") -> FIREParams:
     llm = _build_llm(temperature=0.0)
     structured_llm = llm.with_structured_output(FIREParams)
     prompt = ChatPromptTemplate.from_messages([
-        ("system", _EXTRACTION_SYSTEM + "\n\nExtract FIREParams from the conversation."),
-        ("human", "Conversation:\n{history}\n\nLatest message: {user_message}"),
+        ("system", _EXTRACTION_SYSTEM + (
+            "\n\nExtract FIREParams from the full conversation. "
+            "CRITICAL: Apply Rule A to sum ALL assets into current_savings. "
+            "Read every message in the conversation to find all asset mentions."
+        )),
+        ("human", "Full conversation history:\n{history}\n\nLatest message: {user_message}"),
     ])
     try:
         return (prompt | structured_llm).invoke({
@@ -352,8 +383,14 @@ def extract_health_params(user_message: str, history: str = "") -> HealthScorePa
     llm = _build_llm(temperature=0.0)
     structured_llm = llm.with_structured_output(HealthScoreParams)
     prompt = ChatPromptTemplate.from_messages([
-        ("system", _EXTRACTION_SYSTEM + "\n\nExtract HealthScoreParams from the conversation."),
-        ("human", "Conversation:\n{history}\n\nLatest message: {user_message}"),
+        ("system", _EXTRACTION_SYSTEM + (
+            "\n\nExtract HealthScoreParams from the full conversation. "
+            "CRITICAL: Apply Rule B to calculate equity/debt/gold % from asset amounts. "
+            "Apply Rule C to compute annual tax_saving_investments from EPF/NPS/insurance. "
+            "Apply Rule D to sum monthly retirement contributions. "
+            "Read every message for asset and contribution mentions."
+        )),
+        ("human", "Full conversation history:\n{history}\n\nLatest message: {user_message}"),
     ])
     try:
         return (prompt | structured_llm).invoke({
@@ -369,7 +406,10 @@ def extract_sip_params(user_message: str, history: str = "") -> SIPQueryParams:
     llm = _build_llm(temperature=0.0)
     structured_llm = llm.with_structured_output(SIPQueryParams)
     prompt = ChatPromptTemplate.from_messages([
-        ("system", _EXTRACTION_SYSTEM + "\n\nExtract SIPQueryParams from the conversation."),
+        ("system", _EXTRACTION_SYSTEM + "\n\nExtract SIPQueryParams from the conversation. "
+         "monthly_sip is REQUIRED — if the user hasn't stated a specific SIP amount, "
+         "use their monthly income × 0.30 as a reasonable default. "
+         "years is REQUIRED — if not stated, default to 10."),
         ("human", "Conversation:\n{history}\n\nLatest message: {user_message}"),
     ])
     try:
@@ -378,6 +418,13 @@ def extract_sip_params(user_message: str, history: str = "") -> SIPQueryParams:
         })
     except Exception as exc:
         logger.error("SIPQueryParams extraction failed: %s", exc)
+        err_str = str(exc)
+        if "monthly_sip" in err_str or "tool_use_failed" in err_str or "invalid_request" in err_str:
+            raise RuntimeError(
+                "I need a specific monthly SIP amount to run this projection. "
+                "Please tell me how much you want to invest per month — "
+                "for example: 'Project ₹15,000/month SIP for 10 years.'"
+            ) from exc
         raise RuntimeError(f"Could not extract SIP parameters: {exc}") from exc
 
 
@@ -445,13 +492,12 @@ def generate_response(
     -------
     str — formatted natural language response ready for st.chat_message().
     """
-    llm = _build_llm(temperature=0.3)  # Slight temperature for natural phrasing
+    llm = _build_llm(temperature=0.3)
     prompt = ChatPromptTemplate.from_messages([
         ("system", _RESPONSE_SYSTEM),
         ("human", _RESPONSE_HUMAN),
     ])
     chain = prompt | llm
-
     try:
         response = chain.invoke({
             "user_message": user_message,
@@ -461,7 +507,6 @@ def generate_response(
         return response.content
     except Exception as exc:
         logger.error("Response generation failed: %s", exc)
-        # Graceful degradation — return a raw summary instead of crashing
         return (
             f"I've calculated your results. Here's the raw output:\n\n"
             f"```\n{result_json}\n```\n\n"
@@ -474,12 +519,8 @@ def generate_clarification_request(
     missing_fields: list[str],
     intent: Intent,
 ) -> str:
-    """
-    Ask the user for specific missing information needed to proceed.
-    Generates a natural, conversational follow-up question.
-    """
+    """Ask the user for specific missing information needed to proceed."""
     llm = _build_llm(temperature=0.4)
-
     field_descriptions = {
         "current_age": "your current age",
         "retirement_age": "your target retirement age",
@@ -493,12 +534,7 @@ def generate_clarification_request(
         "total_debt_emi": "your total monthly EMI payments",
         "gross_annual_income": "your annual gross income",
     }
-
-    missing_readable = [
-        field_descriptions.get(f, f.replace("_", " "))
-        for f in missing_fields
-    ]
-
+    missing_readable = [field_descriptions.get(f, f.replace("_", " ")) for f in missing_fields]
     prompt = ChatPromptTemplate.from_messages([
         ("system", (
             "You are a friendly Indian financial advisor collecting information from a user. "
@@ -507,36 +543,40 @@ def generate_clarification_request(
             "Keep it under 60 words."
         )),
         ("human", (
-            f"User wants: {intent.value}\n"
-            f"User said: {user_message}\n"
-            f"Missing info: {', '.join(missing_readable)}\n"
+            f"User wants: {{intent}}\n"
+            f"User said: {{user_message}}\n"
+            f"Missing info: {{missing}}\n"
             "Ask a natural follow-up question to get this info."
         )),
     ])
-
     try:
-        response = (prompt | llm).invoke({})
+        response = (prompt | llm).invoke({
+            "intent": intent.value,
+            "user_message": user_message,
+            "missing": ", ".join(missing_readable),
+        })
         return response.content
     except Exception as exc:
         logger.warning("Clarification generation failed, using fallback: %s", exc)
-        return (
-            f"To help you with this, I need a bit more information. "
-            f"Could you please share {missing_readable[0]}?"
-        )
+        return f"To help you with this, I need a bit more information. Could you please share {missing_readable[0]}?"
 
 
 def generate_general_response(user_message: str, history: str = "") -> str:
     """
-    Handle GENERAL_QUERY intents — financial Q&A that doesn't require personal data.
-    Still governed by the no-hallucination system prompt.
+    Handle GENERAL_QUERY intents and follow-up conversational questions.
+    Has access to full conversation history so it can answer "what data did you use?"
+    type questions without re-asking for information.
     """
     llm = _build_llm(temperature=0.3)
     messages = [
         SystemMessage(content=(
-            "You are an AI Money Mentor — a knowledgeable Indian financial advisor. "
-            "Answer the user's general financial question clearly and accurately. "
-            "Focus on Indian financial products: mutual funds, EPF, PPF, NPS, ELSS, SGBs, etc. "
-            "If unsure, say so. Never invent statistics or returns. Keep it under 200 words."
+            "You are an AI Money Mentor — a knowledgeable, warm Indian financial advisor. "
+            "You have memory of the full conversation and should use it to answer follow-up "
+            "questions directly without asking for information already provided. "
+            "If the user asks 'what data did you use?' or 'how did you calculate this?', "
+            "explain the methodology using the numbers from the conversation history. "
+            "Answer general financial questions about Indian products: MFs, EPF, PPF, NPS, ELSS, SGBs. "
+            "If unsure, say so. Never invent statistics. Keep responses under 250 words."
         )),
         HumanMessage(content=f"Conversation so far:\n{history}\n\nQuestion: {user_message}"),
     ]
@@ -551,16 +591,15 @@ def generate_general_response(user_message: str, history: str = "") -> str:
 #  SECTION 6 — MAIN ORCHESTRATION FUNCTION (called by app.py)                 #
 # ============================================================================ #
 
-def format_history(messages: list[dict]) -> str:
+def format_history(messages: list[dict], max_messages: int = 10) -> str:
     """
     Format Streamlit session_state.messages into a plain-text string
-    for LangChain prompt context. Takes the last 6 messages (3 turns).
+    for LangChain prompt context.
     """
-    recent = messages[-6:] if len(messages) > 6 else messages
+    recent = messages[-max_messages:] if len(messages) > max_messages else messages
     lines = []
     for msg in recent:
         role = "User" if msg["role"] == "user" else "Assistant"
-        # Truncate very long messages (e.g. if a chart was embedded)
-        content = msg["content"][:400] if len(msg["content"]) > 400 else msg["content"]
+        content = msg["content"][:500] if len(msg["content"]) > 500 else msg["content"]
         lines.append(f"{role}: {content}")
     return "\n".join(lines)

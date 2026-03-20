@@ -26,6 +26,7 @@ from dotenv import load_dotenv
 
 # Internal modules
 import quant_engine as qe
+from financial_preprocessor import scan_conversation
 from llm_orchestrator import (
     Intent,
     detect_intent,
@@ -499,20 +500,20 @@ def render_sip_chart(sip_result: qe.SIPProjectionResult, key_suffix: str = "0") 
             annotation_position="bottom right",
         )
 
+    SIP_FONT = dict(color="#1A1A1A", family="'Source Sans 3', sans-serif", size=11)
     fig.update_layout(
         title=dict(
             text=f"SIP Growth Projection — {sip_result.years} Years @ {sip_result.assumed_cagr_pct}% CAGR",
             font=dict(family="'Playfair Display', serif", size=16, color="#1A1A1A"),
         ),
-        xaxis=dict(title="Year", gridcolor="#F0F0F0"),
-        yaxis=dict(
-            title="Value (₹)",
-            gridcolor="#F0F0F0",
-            tickformat=",.0f",
-        ),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        paper_bgcolor="white",
-        plot_bgcolor="white",
+        xaxis=dict(title="Year", gridcolor="#F0F0F0",
+                   tickfont=SIP_FONT, title_font=SIP_FONT),
+        yaxis=dict(title="Value (₹)", gridcolor="#F0F0F0", tickformat=",.0f",
+                   tickfont=SIP_FONT, title_font=SIP_FONT),
+        font=SIP_FONT,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
+                    font=SIP_FONT),
+        paper_bgcolor="white", plot_bgcolor="white",
         margin=dict(t=50, b=40, l=60, r=20),
         height=350,
     )
@@ -685,13 +686,26 @@ def render_fire_roadmap(roadmap, key_suffix: str = "0") -> None:
 
             if bt.annual_returns:
                 ann_df = pd.DataFrame(bt.annual_returns)
+                # Cap display at ±200% — the Feb 2021 bar reflects the COVID-bottom
+                # recovery which technically exceeded 100% YoY but distorts the chart
+                ann_df["display_return"] = ann_df["annual_return_pct"].clip(-200, 200)
+                has_capped = (ann_df["annual_return_pct"] > 200).any()
+
                 fig3 = go.Figure(go.Bar(
-                    x=ann_df["date"], y=ann_df["annual_return_pct"],
+                    x=ann_df["date"],
+                    y=ann_df["display_return"],
                     marker_color=["#1B9E4E" if r >= 0 else "#E2001A"
-                                  for r in ann_df["annual_return_pct"]],
-                    hovertemplate="%{x}: %{y:.1f}%<extra></extra>",
+                                  for r in ann_df["display_return"]],
+                    hovertemplate="%{x}: %{customdata:.1f}%<extra></extra>",
+                    customdata=ann_df["annual_return_pct"],
                 ))
                 fig3.add_hline(y=0, line_color="#888", line_width=1)
+                if has_capped:
+                    fig3.add_annotation(
+                        text="* Some bars capped at 200% for readability (post-COVID recovery)",
+                        xref="paper", yref="paper", x=0, y=-0.18,
+                        showarrow=False, font=dict(size=9, color="#888"),
+                    )
                 fig3.update_layout(
                     title=dict(text="Year-by-Year Backtested Returns",
                                font=dict(family="'Playfair Display',serif", size=14, color="#1A1A1A")),
@@ -700,7 +714,7 @@ def render_fire_roadmap(roadmap, key_suffix: str = "0") -> None:
                                tickfont=CHART_FONT, title_font=CHART_FONT),
                     font=CHART_FONT,
                     paper_bgcolor="white", plot_bgcolor="white",
-                    margin=dict(t=40, b=40, l=55, r=20), height=230,
+                    margin=dict(t=40, b=50, l=55, r=20), height=250,
                 )
                 st.plotly_chart(fig3, use_container_width=True, key=f"chart_fire_backtest_{key_suffix}")
 
@@ -1061,7 +1075,38 @@ def _route_and_respond(user_input: str) -> None:
     Detects intent → extracts params → calls quant engine → generates response.
     All mutations go to st.session_state; return value is None.
     """
-    history_str = format_history(st.session_state.messages[:-1])  # Exclude current message
+    history_str = format_history(st.session_state.messages[:-1])
+    # For extraction we need the FULL history — assets mentioned across many messages
+    full_history_str = format_history(st.session_state.messages[:-1], max_messages=50)
+
+    # ── Deterministic pre-processing ────────────────────────────────────────── #
+    # Scan conversation with regex BEFORE calling the LLM extractor.
+    # The verified facts block is prepended to full_history_str so the LLM
+    # reads pre-computed totals rather than summing ambiguous natural language.
+    try:
+        facts = scan_conversation(st.session_state.messages)
+        if facts.total_savings > 0 or facts.monthly_income or facts.monthly_expenses:
+            verified_block = facts.to_context_string()
+            full_history_str = verified_block + "\n\n" + full_history_str
+            logger.info("Preprocessor: savings=₹%.0f income=₹%.0f expenses=₹%.0f",
+                        facts.total_savings, facts.monthly_income or 0,
+                        facts.monthly_expenses or 0)
+    except Exception as pp_exc:
+        logger.warning("Preprocessor failed (non-fatal): %s", pp_exc)
+
+    # Inject accumulated user context so the LLM never re-asks for known facts
+    if st.session_state.user_context:
+        ctx = st.session_state.user_context
+        ctx_lines = []
+        if "current_age" in ctx: ctx_lines.append(f"User age: {ctx['current_age']}")
+        if "retirement_age" in ctx: ctx_lines.append(f"Retirement age: {ctx['retirement_age']}")
+        if "monthly_income" in ctx: ctx_lines.append(f"Monthly income: ₹{ctx['monthly_income']:,.0f}")
+        if "monthly_expenses" in ctx: ctx_lines.append(f"Monthly expenses: ₹{ctx['monthly_expenses']:,.0f}")
+        if "current_savings" in ctx: ctx_lines.append(f"Current savings: ₹{ctx['current_savings']:,.0f}")
+        if ctx_lines:
+            ctx_prefix = "Known user facts: " + " | ".join(ctx_lines) + "\n\n"
+            history_str = ctx_prefix + history_str
+            full_history_str = ctx_prefix + full_history_str
 
     # ── Step 1: Detect Intent ───────────────────────────────────────────────── #
     try:
@@ -1121,7 +1166,32 @@ def _route_and_respond(user_input: str) -> None:
     if intent == Intent.HEALTH_SCORE:
         with st.spinner("Calculating your Money Health Score..."):
             try:
-                params = extract_health_params(user_input, history_str)
+                params = extract_health_params(user_input, full_history_str)
+                # Hard-override with preprocessor values — regex is more reliable
+                # than the LLM for numerical fields
+                try:
+                    _facts = scan_conversation(st.session_state.messages)
+                    if _facts.monthly_income:
+                        params.monthly_income = _facts.monthly_income
+                        params.gross_annual_income = _facts.monthly_income * 12
+                    if _facts.monthly_expenses:
+                        params.monthly_expenses = _facts.monthly_expenses
+                    if _facts.monthly_retirement_contributions > 0:
+                        params.epf_ppf_nps_monthly = _facts.monthly_retirement_contributions
+                    if _facts.annual_tax_saving > 0:
+                        params.tax_saving_investments = _facts.annual_tax_saving
+                    if _facts.total_savings > 0 and _facts.equity_pct > 0:
+                        params.equity_pct = _facts.equity_pct
+                        params.debt_pct = _facts.debt_pct
+                        params.gold_pct = _facts.gold_pct
+                except Exception:
+                    pass  # Preprocessor override is best-effort
+                # Persist key facts for future turns
+                st.session_state.user_context.update({
+                    "monthly_income": params.monthly_income,
+                    "monthly_expenses": params.monthly_expenses,
+                    "gross_annual_income": params.gross_annual_income,
+                })
                 health_result = qe.calculate_money_health_score(
                     monthly_income=params.monthly_income,
                     monthly_expenses=params.monthly_expenses,
@@ -1153,7 +1223,7 @@ def _route_and_respond(user_input: str) -> None:
     elif intent == Intent.SIP_PROJECTION:
         with st.spinner("Projecting your SIP growth..."):
             try:
-                params = extract_sip_params(user_input, history_str)
+                params = extract_sip_params(user_input, full_history_str)
                 sip_result = qe.project_sip_corpus(
                     monthly_sip=params.monthly_sip,
                     years=params.years,
@@ -1176,16 +1246,25 @@ def _route_and_respond(user_input: str) -> None:
                 )
                 _add_assistant_message(narrative, viz_type="sip", result=sip_result)
             except (ValueError, RuntimeError) as e:
-                _add_assistant_message(
-                    f"I couldn't calculate the SIP projection: **{e}**\n\n"
-                    "Please check your inputs and try again."
-                )
+                err_msg = str(e)
+                # Strip any raw JSON/schema errors — show only the clean message
+                if "{" in err_msg or "tool_use_failed" in err_msg or "schema" in err_msg.lower():
+                    _add_assistant_message(
+                        "To project your SIP, I need to know the **monthly amount** you want to invest "
+                        "and the **investment horizon**.\n\n"
+                        "Try: *'Project ₹15,000/month SIP for 10 years at 12% returns'*"
+                    )
+                else:
+                    _add_assistant_message(
+                        f"I couldn't calculate the SIP projection: **{err_msg}**\n\n"
+                        "Please specify your monthly SIP amount and years."
+                    )
 
     # ── 4c. MARKET_DATA ─────────────────────────────────────────────────────── #
     elif intent == Intent.MARKET_DATA:
         with st.spinner("Fetching live market data..."):
             try:
-                params = extract_market_params(user_input, history_str)
+                params = extract_market_params(user_input, full_history_str)
                 market_result = qe.fetch_historical_rolling_return(
                     params.ticker_or_alias, params.period
                 )
@@ -1206,7 +1285,28 @@ def _route_and_respond(user_input: str) -> None:
         with st.spinner("Building your backtest-validated FIRE roadmap... (fetching live Nifty data)"):
             try:
                 from fire_planner import build_fire_roadmap, format_roadmap_for_llm
-                params = extract_fire_params(user_input, history_str)
+                params = extract_fire_params(user_input, full_history_str)
+                # Hard-override with preprocessor values
+                try:
+                    _facts = scan_conversation(st.session_state.messages)
+                    if _facts.total_savings > 0:
+                        params.current_savings = _facts.total_savings
+                    if _facts.monthly_income:
+                        params.monthly_income = _facts.monthly_income
+                    if _facts.monthly_expenses:
+                        params.monthly_expenses = _facts.monthly_expenses
+                    if _facts.monthly_sip:
+                        params.monthly_sip = _facts.monthly_sip
+                except Exception:
+                    pass
+                # Persist key facts for future turns
+                st.session_state.user_context.update({
+                    "current_age": params.current_age,
+                    "retirement_age": params.retirement_age,
+                    "monthly_income": params.monthly_income,
+                    "monthly_expenses": params.monthly_expenses,
+                    "current_savings": params.current_savings,
+                })
 
                 roadmap = build_fire_roadmap(
                     current_age=params.current_age,

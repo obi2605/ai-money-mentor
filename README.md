@@ -66,7 +66,7 @@ Uploads a CAMS/KFintech Consolidated Account Statement PDF and produces:
 
 ```bash
 # 1. Clone the repo
-git clone https://github.com/your-username/ai-money-mentor.git
+git clone https://github.com/obi2605/ai-money-mentor.git
 cd ai-money-mentor
 
 # 2. Create and activate a virtual environment

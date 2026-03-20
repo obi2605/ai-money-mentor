@@ -412,8 +412,8 @@ def calculate_money_health_score(
         debt_score = 0.0
     scores["debt_health"] = round(debt_score * 100, 1)
 
-    # 5. Tax Efficiency (80C ₹1.5L + 80D ₹25K = ₹1.75L max)
-    max_tax_saving = 175000
+    # 5. Tax Efficiency (80C ₹1.5L + 80CCD(1B) NPS ₹50k = ₹2L max)
+    max_tax_saving = 200000
     tax_ratio = min(tax_saving_investments / max_tax_saving, 1.0) if max_tax_saving > 0 else 0.0
     scores["tax_efficiency"] = round(tax_ratio * 100, 1)
 
