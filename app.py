@@ -32,6 +32,7 @@ from llm_orchestrator import (
     detect_intent,
     extract_fire_params,
     extract_health_params,
+    extract_life_event_params,
     extract_market_params,
     extract_sip_params,
     format_history,
@@ -255,7 +256,7 @@ st.markdown(ET_CSS, unsafe_allow_html=True)
 def _init_state() -> None:
     """Initialise all session state keys with safe defaults (idempotent)."""
     defaults: dict = {
-        "messages": [],           # list[dict{role, content}]
+        "messages": [],
         "active_module": None,
         "user_context": {},
         "cams_data": None,
@@ -265,7 +266,8 @@ def _init_state() -> None:
         "market_result": None,
         "processing": False,
         "xray_report": None,
-        "msg_results": {},        # Per-message results: {msg_idx: {"type": ..., "result": ...}}
+        "life_event_result": None,
+        "msg_results": {},
     }
     for key, val in defaults.items():
         if key not in st.session_state:
@@ -301,6 +303,7 @@ with st.sidebar:
         "📈 SIP Projector": Intent.SIP_PROJECTION,
         "📉 Market Data": Intent.MARKET_DATA,
         "🔬 MF Portfolio X-Ray": Intent.MF_XRAY,
+        "🎯 Life Event Advisor": Intent.LIFE_EVENT,
     }
     selected_module_label = st.selectbox(
         "Module", list(module_options.keys()), label_visibility="collapsed"
@@ -348,6 +351,7 @@ with st.sidebar:
         st.session_state.market_result = None
         st.session_state.cams_data = None
         st.session_state.xray_report = None
+        st.session_state.life_event_result = None
         st.rerun()
 
     # --- Disclaimer ---
@@ -998,6 +1002,99 @@ def render_xray_report(report, key_suffix: str = "0") -> None:
             st.info("Expense ratio data not available for your holdings.")
 
 
+def render_life_event(result, key_suffix: str = "0") -> None:
+    """Render the Life Event Financial Advisor output."""
+    from life_event_advisor import LifeEventType
+
+    EVENT_ICONS = {
+        "BONUS": "💰", "INHERITANCE": "🏦", "MARRIAGE": "💍",
+        "NEW_BABY": "👶", "JOB_LOSS": "💼", "HOME_PURCHASE": "🏠",
+    }
+    icon = EVENT_ICONS.get(result.event_type.value, "📋")
+    event_label = result.event_type.value.replace("_", " ").title()
+
+    st.markdown(
+        f'<div class="section-heading">{icon} {event_label} Action Plan</div>',
+        unsafe_allow_html=True
+    )
+
+    # Summary banner
+    st.markdown(f"""
+    <div style="background:#F0FFF4; border-left:3px solid #1B9E4E;
+                padding:12px 16px; border-radius:6px; margin-bottom:16px;">
+        <span style="font-family:'Playfair Display',serif; font-size:15px;
+                     font-weight:600; color:#1A1A1A;">{result.summary}</span>
+    </div>""", unsafe_allow_html=True)
+
+    # Allocation plan
+    if result.allocations:
+        st.markdown('<div class="section-heading">💼 Allocation Plan</div>', unsafe_allow_html=True)
+        for a in sorted(result.allocations, key=lambda x: x.priority):
+            color = "#1B9E4E" if a.priority == 1 else "#1A1A1A" if a.priority == 2 else "#555"
+            st.markdown(f"""
+            <div style="display:flex; justify-content:space-between; align-items:center;
+                        padding:10px 14px; border-radius:6px; margin-bottom:8px;
+                        background:#F9F9F9; border-left:3px solid {color};">
+                <div>
+                    <div style="font-weight:600; color:#1A1A1A; font-size:14px;">{a.label}</div>
+                    <div style="color:#666; font-size:12px; margin-top:2px;">{a.rationale}</div>
+                </div>
+                <div style="text-align:right; min-width:100px;">
+                    <div style="font-family:'Playfair Display',serif; font-weight:700;
+                                font-size:16px; color:{color};">
+                        ₹{a.amount/1e5:.1f}L
+                    </div>
+                    <div style="color:#888; font-size:11px;">{a.pct:.0f}%</div>
+                </div>
+            </div>""", unsafe_allow_html=True)
+
+    # Warnings row
+    col1, col2, col3 = st.columns(3)
+    if result.tax_liability > 0:
+        with col1:
+            st.markdown(f"""
+            <div class="metric-card" style="border-top-color:#F39C12;">
+                <div class="metric-value" style="color:#F39C12;">
+                    ₹{result.tax_liability/1e5:.1f}L
+                </div>
+                <div class="metric-label">TAX LIABILITY</div>
+            </div>""", unsafe_allow_html=True)
+    if result.insurance_gap > 0:
+        with col2:
+            st.markdown(f"""
+            <div class="metric-card" style="border-top-color:#E2001A;">
+                <div class="metric-value" style="color:#E2001A;">
+                    ₹{result.insurance_gap/1e7:.1f}Cr
+                </div>
+                <div class="metric-label">INSURANCE GAP</div>
+            </div>""", unsafe_allow_html=True)
+    if result.emergency_fund_gap > 0:
+        with col3:
+            st.markdown(f"""
+            <div class="metric-card" style="border-top-color:#E67E22;">
+                <div class="metric-value" style="color:#E67E22;">
+                    ₹{result.emergency_fund_gap/1e5:.1f}L
+                </div>
+                <div class="metric-label">EMERGENCY FUND GAP</div>
+            </div>""", unsafe_allow_html=True)
+
+    # Tax tip
+    if result.tax_tip:
+        st.markdown('<div class="section-heading">🧾 Tax Angle</div>', unsafe_allow_html=True)
+        st.info(result.tax_tip)
+
+    # Action items
+    if result.action_items:
+        st.markdown('<div class="section-heading">✅ Action Items</div>', unsafe_allow_html=True)
+        for i, action in enumerate(result.action_items, 1):
+            icon_color = "#E2001A" if "⚠️" in action else "#1B9E4E"
+            st.markdown(f"""
+            <div style="display:flex; gap:10px; padding:8px 0; border-bottom:1px solid #F0F0F0;">
+                <div style="font-weight:700; color:{icon_color}; min-width:20px;">{i}.</div>
+                <div style="color:#1A1A1A; font-size:13px;">{action}</div>
+            </div>""", unsafe_allow_html=True)
+
+
 # ============================================================================ #
 #  SECTION 6 — QUICK-START PROMPTS (shown when chat is empty)                  #
 # ============================================================================ #
@@ -1006,7 +1103,7 @@ QUICK_PROMPTS = [
     "Check my money health score",
     "How much SIP do I need to retire at 50?",
     "What's the Nifty 50 5-year CAGR?",
-    "I earn ₹80,000/month. Am I saving enough?",
+    "I got a ₹5L bonus, how should I use it?",
     "Analyse my CAMS statement",
 ]
 
@@ -1054,6 +1151,8 @@ for idx, msg in enumerate(st.session_state.messages):
             render_market_data(result)
         elif vtype == "xray":
             render_xray_report(result, key_suffix=f"h{idx}")
+        elif vtype == "life_event":
+            render_life_event(result, key_suffix=f"h{idx}")
 
 # ============================================================================ #
 #  SECTION 8 — MAIN ROUTING ENGINE (the core of app.py)                       #
@@ -1129,9 +1228,6 @@ def _route_and_respond(user_input: str) -> None:
     intent = intent_result.intent
 
     # ── Deterministic override: strong HEALTH_SCORE signals ─────────────────── #
-    # If the message contains income + any of (expenses/emergency/insurance/debt),
-    # always route to HEALTH_SCORE regardless of LLM classification.
-    # This prevents CAMS context bias from hijacking clear health score queries.
     msg_lower = user_input.lower()
     has_income = any(k in msg_lower for k in ["earn", "income", "salary", "per month"])
     has_health_signal = any(k in msg_lower for k in [
@@ -1141,11 +1237,42 @@ def _route_and_respond(user_input: str) -> None:
         logger.info("Deterministic override: %s → HEALTH_SCORE (income+health signals)", intent)
         intent = Intent.HEALTH_SCORE
 
+    # ── Deterministic override: lock LIFE_EVENT across follow-up messages ────── #
+    # If the previous assistant message was a LIFE_EVENT clarification request,
+    # and this message doesn't trigger a different strong intent, stay in LIFE_EVENT.
+    has_life_event_signal = any(k in msg_lower for k in [
+        "bonus", "inheritance", "windfall", "marriage", "wedding", "baby", "child",
+        "job loss", "lost my job", "fired", "laid off", "layoff", "home", "house", "flat",
+        "property", "bought", "getting married", "expecting"
+    ])
+    if has_life_event_signal and intent not in (Intent.HEALTH_SCORE, Intent.MF_XRAY):
+        intent = Intent.LIFE_EVENT
+        logger.info("Deterministic override → LIFE_EVENT (life event signal detected)")
+
+    # ── If previous intent was LIFE_EVENT and user is giving more details, stay ─ #
+    recent_msgs = st.session_state.msg_results
+    last_idx = max(recent_msgs.keys(), default=-1)
+    last_was_life_event = (
+        last_idx >= 0 and
+        recent_msgs.get(last_idx, {}).get("type") == "life_event"
+    )
+    # If last result was a clarification (no result stored) but user mentioned bonus earlier
+    conversation_has_bonus = any(
+        k in format_history(st.session_state.messages, max_messages=10).lower()
+        for k in ["bonus", "inheritance", "windfall", "marriage", "baby", "job loss",
+                  "lost my job", "fired", "laid off", "home purchase", "buying a house"]
+    )
+    if (intent == Intent.FIRE_PLANNER and conversation_has_bonus
+            and not has_income and not has_health_signal):
+        logger.info("Deterministic override: FIRE_PLANNER → LIFE_EVENT (bonus context in history)")
+        intent = Intent.LIFE_EVENT
+
     logger.info("Routing to intent: %s", intent)
 
-    # ── Step 2: Handle CLARIFY (not enough info yet) ─────────────────────────── #
+    # ── Step 2: Handle CLARIFY — but NEVER for LIFE_EVENT (has good defaults) ── #
     if intent == Intent.CLARIFY or (
-        intent != Intent.GENERAL_QUERY and len(intent_result.missing_info) > 2
+        intent not in (Intent.GENERAL_QUERY, Intent.LIFE_EVENT)
+        and len(intent_result.missing_info) > 2
     ):
         clarification = generate_clarification_request(
             user_input, intent_result.missing_info, intent
@@ -1372,6 +1499,52 @@ def _route_and_respond(user_input: str) -> None:
                         "Please ensure the uploaded file is a valid CAMS/KFintech statement."
                     )
 
+    # ── 4f. LIFE_EVENT ──────────────────────────────────────────────────────── #
+    elif intent == Intent.LIFE_EVENT:
+        with st.spinner("Building your personalised life event action plan..."):
+            try:
+                from life_event_advisor import (
+                    LifeEventInput, LifeEventType, build_life_event_plan,
+                    format_life_event_for_llm,
+                )
+                from llm_orchestrator import LifeEventParams
+                params: LifeEventParams = extract_life_event_params(
+                    user_input, full_history_str
+                )
+
+                # Build input — override with preprocessor values where available
+                _facts = scan_conversation(st.session_state.messages)
+                le_input = LifeEventInput(
+                    event_type=LifeEventType(params.event_type),
+                    event_amount=params.event_amount,
+                    monthly_income=_facts.monthly_income or params.monthly_income,
+                    monthly_expenses=_facts.monthly_expenses or params.monthly_expenses,
+                    current_savings=_facts.total_savings or params.current_savings,
+                    current_emergency_fund=params.current_emergency_fund,
+                    total_insurance_cover=params.total_insurance_cover,
+                    existing_sip=_facts.monthly_sip or params.existing_sip,
+                    tax_bracket_pct=params.tax_bracket_pct,
+                    home_loan_outstanding=params.home_loan_outstanding,
+                    num_dependents=params.num_dependents,
+                    years_to_retirement=params.years_to_retirement,
+                )
+
+                le_result = build_life_event_plan(le_input)
+                st.session_state.life_event_result = le_result
+
+                narrative = generate_response(
+                    user_input,
+                    format_life_event_for_llm(le_result),
+                    context=f"Event: {le_result.event_type.value}. Amount: ₹{le_result.event_amount:,.0f}.",
+                )
+                _add_assistant_message(narrative, viz_type="life_event", result=le_result)
+            except (ValueError, RuntimeError) as e:
+                _add_assistant_message(
+                    f"I couldn't build the action plan: **{e}**\n\n"
+                    "Could you tell me more about the event? For example: "
+                    "'I got a ₹5L bonus' or 'I'm getting married next year with a ₹10L budget'."
+                )
+
 
 def _add_assistant_message(
     content: str,
@@ -1404,6 +1577,8 @@ def _add_assistant_message(
             render_market_data(result)
         elif viz_type == "xray" and result is not None:
             render_xray_report(result, key_suffix=suffix)
+        elif viz_type == "life_event" and result is not None:
+            render_life_event(result, key_suffix=suffix)
 
 
 # ============================================================================ #

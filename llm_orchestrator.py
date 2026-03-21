@@ -68,13 +68,14 @@ def _build_llm(temperature: float = 0.0) -> ChatGroq:
 
 class Intent(str, Enum):
     """All supported user intents. Maps 1:1 to a module in the app."""
-    HEALTH_SCORE    = "HEALTH_SCORE"     # → quant_engine.calculate_money_health_score
-    FIRE_PLANNER    = "FIRE_PLANNER"     # → fire_planner.build_fire_roadmap
-    MF_XRAY         = "MF_XRAY"          # → mf_xray (triggered by PDF upload)
-    MARKET_DATA     = "MARKET_DATA"      # → quant_engine.fetch_historical_rolling_return
-    SIP_PROJECTION  = "SIP_PROJECTION"   # → quant_engine.project_sip_corpus
-    GENERAL_QUERY   = "GENERAL_QUERY"    # → plain LLM response (no math needed)
-    CLARIFY         = "CLARIFY"          # → ask user for missing variables
+    HEALTH_SCORE    = "HEALTH_SCORE"
+    FIRE_PLANNER    = "FIRE_PLANNER"
+    MF_XRAY         = "MF_XRAY"
+    MARKET_DATA     = "MARKET_DATA"
+    SIP_PROJECTION  = "SIP_PROJECTION"
+    LIFE_EVENT      = "LIFE_EVENT"
+    GENERAL_QUERY   = "GENERAL_QUERY"
+    CLARIFY         = "CLARIFY"
 
 
 class IntentResult(BaseModel):
@@ -102,16 +103,18 @@ Classify the user's message into exactly ONE intent from this list:
 - MF_XRAY         : User wants to analyse mutual fund portfolio, mentions CAMS, NAV, returns, overlap, or expense ratio.
 - MARKET_DATA     : User asks about Nifty 50, Sensex, index returns, market performance, or specific fund NAVs.
 - SIP_PROJECTION  : User asks "how much SIP do I need", "will my SIP be enough", or wants to project SIP growth.
+- LIFE_EVENT      : User mentions a specific life event: bonus, salary hike, inheritance, windfall, marriage, wedding, baby, child, job loss, layoff, fired, home purchase, buying a house/flat.
 - GENERAL_QUERY   : General financial question that doesn't require personal data or computation.
 - CLARIFY         : User's message is ambiguous or missing critical data; you need to ask a follow-up.
 
 PRIORITY RULES (apply in order, highest priority first):
 1. If the message contains income/expenses/salary AND any of (emergency fund, insurance, debt, savings) → HEALTH_SCORE. Always. Even if CAMS was mentioned before.
 2. If the message explicitly says "analyse", "CAMS", "statement", "portfolio", "my funds" → MF_XRAY.
-3. If the message mentions retirement age, FIRE, "retire at", "corpus" → FIRE_PLANNER.
-4. If the message asks about Nifty, Sensex, index, market returns → MARKET_DATA.
-5. If the message asks about SIP amounts or projections → SIP_PROJECTION.
-6. Never let conversation history override these rules. Each message is classified on its OWN content.
+3. If the message mentions bonus, inheritance, windfall, marriage, baby, job loss, home purchase → LIFE_EVENT.
+4. If the message mentions retirement age, FIRE, "retire at", "corpus" → FIRE_PLANNER.
+5. If the message asks about Nifty, Sensex, index, market returns → MARKET_DATA.
+6. If the message asks about SIP amounts or projections → SIP_PROJECTION.
+7. Never let conversation history override these rules. Each message is classified on its OWN content.
 
 Rules:
 - Never invent financial data. Only classify and identify missing information.
@@ -324,6 +327,35 @@ class MarketDataParams(BaseModel):
         return v
 
 
+class LifeEventParams(BaseModel):
+    """Parameters for the Life Event Financial Advisor."""
+    event_type: str = Field(
+        description=(
+            "Type of life event. Must be exactly one of: "
+            "BONUS, INHERITANCE, MARRIAGE, NEW_BABY, JOB_LOSS, HOME_PURCHASE"
+        )
+    )
+    event_amount: float = Field(
+        default=0.0,
+        description=(
+            "The financial amount associated with the event in INR. "
+            "For BONUS: bonus amount. For INHERITANCE: windfall amount. "
+            "For MARRIAGE: available budget. For HOME_PURCHASE: property price. "
+            "For JOB_LOSS: severance pay. For NEW_BABY: available savings for baby."
+        )
+    )
+    monthly_income: float = Field(default=0.0, description="Monthly income in INR.")
+    monthly_expenses: float = Field(default=0.0, description="Monthly expenses in INR.")
+    current_savings: float = Field(default=0.0, description="Total existing savings in INR.")
+    current_emergency_fund: float = Field(default=0.0, description="Liquid emergency fund in INR.")
+    total_insurance_cover: float = Field(default=0.0, description="Total life insurance sum assured in INR.")
+    existing_sip: float = Field(default=0.0, description="Current monthly SIP in INR.")
+    tax_bracket_pct: float = Field(default=30.0, description="Income tax bracket: 10, 20, or 30.")
+    home_loan_outstanding: float = Field(default=0.0, description="Outstanding home loan in INR.")
+    num_dependents: int = Field(default=0, description="Number of dependents.")
+    years_to_retirement: int = Field(default=20, description="Years to retirement.")
+
+
 # ============================================================================ #
 #  SECTION 4 — EXTRACTION CHAINS (LangChain → Pydantic)                       #
 # ============================================================================ #
@@ -443,6 +475,32 @@ def extract_market_params(user_message: str, history: str = "") -> MarketDataPar
     except Exception as exc:
         logger.error("MarketDataParams extraction failed: %s", exc)
         raise RuntimeError(f"Could not extract market query parameters: {exc}") from exc
+
+
+def extract_life_event_params(user_message: str, history: str = "") -> LifeEventParams:
+    """Extract Life Event parameters from user conversation."""
+    llm = _build_llm(temperature=0.0)
+    structured_llm = llm.with_structured_output(LifeEventParams)
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", _EXTRACTION_SYSTEM + (
+            "\n\nExtract LifeEventParams from the conversation. "
+            "event_type MUST be one of: BONUS, INHERITANCE, MARRIAGE, NEW_BABY, JOB_LOSS, HOME_PURCHASE. "
+            "Map user language: 'got fired/laid off/lost job' → JOB_LOSS, "
+            "'expecting/having a baby/child' → NEW_BABY, "
+            "'getting married/wedding' → MARRIAGE, "
+            "'received bonus/increment/hike' → BONUS, "
+            "'buying house/flat/property' → HOME_PURCHASE, "
+            "'received inheritance/windfall/gift' → INHERITANCE."
+        )),
+        ("human", "Full conversation history:\n{history}\n\nLatest message: {user_message}"),
+    ])
+    try:
+        return (prompt | structured_llm).invoke({
+            "user_message": user_message, "history": history
+        })
+    except Exception as exc:
+        logger.error("LifeEventParams extraction failed: %s", exc)
+        raise RuntimeError(f"Could not extract life event parameters: {exc}") from exc
 
 
 # ============================================================================ #
