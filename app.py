@@ -30,6 +30,7 @@ from financial_preprocessor import scan_conversation
 from llm_orchestrator import (
     Intent,
     detect_intent,
+    extract_couple_params,
     extract_fire_params,
     extract_health_params,
     extract_life_event_params,
@@ -269,6 +270,7 @@ def _init_state() -> None:
         "xray_report": None,
         "life_event_result": None,
         "tax_wizard_result": None,
+        "couple_report": None,
         "msg_results": {},
     }
     for key, val in defaults.items():
@@ -307,6 +309,7 @@ with st.sidebar:
         "🔬 MF Portfolio X-Ray": Intent.MF_XRAY,
         "🎯 Life Event Advisor": Intent.LIFE_EVENT,
         "🧾 Tax Wizard": Intent.TAX_WIZARD,
+        "👫 Couple's Planner": Intent.COUPLE_PLANNER,
     }
     selected_module_label = st.selectbox(
         "Module", list(module_options.keys()), label_visibility="collapsed"
@@ -356,6 +359,7 @@ with st.sidebar:
         st.session_state.xray_report = None
         st.session_state.life_event_result = None
         st.session_state.tax_wizard_result = None
+        st.session_state.couple_report = None
         st.rerun()
 
     # --- Disclaimer ---
@@ -1437,6 +1441,150 @@ def render_tax_wizard(report, key_suffix: str = "0") -> None:
             </div>""", unsafe_allow_html=True)
 
 
+def render_couples_plan(report, key_suffix: str = "0") -> None:
+    """Render the Couple's Money Planner output."""
+    a_name = report.partner_a.name
+    b_name = report.partner_b.name
+    nw = report.net_worth
+
+    st.markdown('<div class="section-heading">👫 Joint Financial Overview</div>', unsafe_allow_html=True)
+
+    # Combined net worth metrics
+    c1, c2, c3, c4 = st.columns(4)
+    corpus_display = f"₹{nw.projected_corpus_20y/1e7:.1f}Cr" if nw.projected_corpus_20y > 0 else "Add SIPs"
+    corpus_color = "#1B9E4E" if nw.projected_corpus_20y > 0 else "#F39C12"
+    metrics = [
+        (c1, f"₹{nw.combined_monthly_income/1000:.0f}K", "COMBINED INCOME/MO", "#1A1A1A"),
+        (c2, f"₹{nw.combined_savings/1e7:.2f}Cr" if nw.combined_savings > 0 else "Not shared", "COMBINED SAVINGS", "#1B9E4E" if nw.combined_savings > 0 else "#F39C12"),
+        (c3, f"{nw.savings_rate_pct:.0f}%", "SAVINGS RATE", "#1B9E4E" if nw.savings_rate_pct >= 20 else "#F39C12"),
+        (c4, corpus_display, "20Y CORPUS", corpus_color),
+    ]
+    for col, val, label, color in metrics:
+        with col:
+            st.markdown(f"""
+            <div class="metric-card" style="border-top-color:{color};">
+                <div class="metric-value" style="color:{color};">{val}</div>
+                <div class="metric-label">{label}</div>
+            </div>""", unsafe_allow_html=True)
+
+    # Partner income comparison
+    st.markdown('<div class="section-heading">💰 Income Breakdown</div>', unsafe_allow_html=True)
+    total_inc = nw.combined_monthly_income or 1
+    for partner, color in [(report.partner_a, "#E2001A"), (report.partner_b, "#1A1A1A")]:
+        pct = partner.monthly_income / total_inc * 100
+        st.markdown(f"""
+        <div style="margin-bottom:8px;">
+            <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+                <span style="font-weight:600; color:#1A1A1A;">{partner.name}</span>
+                <span style="color:#666;">₹{partner.monthly_income/1000:.0f}K/month ({pct:.0f}%)</span>
+            </div>
+            <div style="background:#F0F0F0; border-radius:4px; height:8px;">
+                <div style="background:{color}; width:{pct}%; height:8px; border-radius:4px;"></div>
+            </div>
+        </div>""", unsafe_allow_html=True)
+
+    # HRA Optimization — only show if there's actually a saving
+    if report.hra.total_tax_saving > 0:
+        st.markdown('<div class="section-heading">🏠 HRA Optimization</div>', unsafe_allow_html=True)
+        st.markdown(f"""
+        <div style="background:#F0FFF4; border-left:3px solid #1B9E4E;
+                    padding:12px 16px; border-radius:6px; margin-bottom:12px;">
+            <div style="font-weight:700; color:#1A1A1A;">
+                Claim under: {report.hra.recommended_claimant}
+            </div>
+            <div style="color:#555; font-size:13px; margin-top:4px;">{report.hra.explanation}</div>
+            <div style="font-weight:600; color:#1B9E4E; margin-top:6px;">
+                Annual saving: ₹{report.hra.total_tax_saving/1000:.1f}K
+            </div>
+        </div>""", unsafe_allow_html=True)
+    elif report.net_worth.combined_monthly_income > 0:
+        st.markdown('<div class="section-heading">🏠 HRA Optimization</div>', unsafe_allow_html=True)
+        st.info("Share each partner's monthly HRA component (from salary slip) to optimize who should claim rent exemption.")
+
+    # NPS Matching
+    st.markdown('<div class="section-heading">🏦 NPS Matching (80CCD 1B)</div>', unsafe_allow_html=True)
+    nc1, nc2 = st.columns(2)
+    for col, name, nps_add, nps_save in [
+        (nc1, a_name, report.nps.partner_a_additional_nps, report.nps.partner_a_tax_saving),
+        (nc2, b_name, report.nps.partner_b_additional_nps, report.nps.partner_b_tax_saving),
+    ]:
+        with col:
+            color = "#1B9E4E" if nps_add > 0 else "#999"
+            st.markdown(f"""
+            <div style="border:1px solid #E0E0E0; border-radius:8px; padding:12px; text-align:center;">
+                <div style="font-weight:600; color:#1A1A1A; margin-bottom:6px;">{name}</div>
+                <div style="font-size:18px; font-weight:700; color:{color};">
+                    ₹{nps_add/1000:.0f}K
+                </div>
+                <div style="font-size:11px; color:#888;">additional NPS/year</div>
+                <div style="font-size:13px; font-weight:600; color:#1B9E4E; margin-top:4px;">
+                    saves ₹{nps_save/1000:.1f}K tax
+                </div>
+            </div>""", unsafe_allow_html=True)
+
+    # SIP Split
+    st.markdown('<div class="section-heading">📈 Optimised SIP Split</div>', unsafe_allow_html=True)
+    for advice in report.sip.monthly_sip_advice:
+        st.markdown(f"""
+        <div style="padding:8px 14px; background:#F9F9F9; border-left:3px solid #E2001A;
+                    border-radius:4px; margin-bottom:8px; font-size:13px; color:#1A1A1A;">
+            {advice}
+        </div>""", unsafe_allow_html=True)
+
+    sc1, sc2 = st.columns(2)
+    for col, name, sip_amt in [
+        (sc1, a_name, report.sip.partner_a_sip),
+        (sc2, b_name, report.sip.partner_b_sip),
+    ]:
+        with col:
+            st.markdown(f"""
+            <div style="border:1px solid #E0E0E0; border-radius:8px; padding:12px; text-align:center;">
+                <div style="font-weight:600; color:#1A1A1A;">{name}</div>
+                <div style="font-size:20px; font-weight:700; color:#E2001A; margin:6px 0;">
+                    ₹{sip_amt/1000:.1f}K
+                </div>
+                <div style="font-size:11px; color:#888;">per month</div>
+            </div>""", unsafe_allow_html=True)
+
+    # Insurance gaps
+    if nw.total_insurance_gap > 0:
+        st.markdown('<div class="section-heading">🛡️ Insurance Gaps</div>', unsafe_allow_html=True)
+        ic1, ic2 = st.columns(2)
+        for col, name, gap in [
+            (ic1, a_name, nw.partner_a_insurance_gap),
+            (ic2, b_name, nw.partner_b_insurance_gap),
+        ]:
+            with col:
+                color = "#E2001A" if gap > 0 else "#1B9E4E"
+                label = f"₹{gap/1e7:.1f}Cr needed" if gap > 0 else "✅ Adequate"
+                st.markdown(f"""
+                <div class="metric-card" style="border-top-color:{color};">
+                    <div class="metric-value" style="color:{color}; font-size:18px;">{label}</div>
+                    <div class="metric-label">{name.upper()} COVER GAP</div>
+                </div>""", unsafe_allow_html=True)
+
+    # Total tax saving banner
+    if report.total_annual_tax_saving > 0:
+        st.markdown(f"""
+        <div style="background:#FFF3E0; border-left:4px solid #F39C12;
+                    padding:14px 18px; border-radius:6px; margin:16px 0;">
+            <span style="font-family:'Playfair Display',serif; font-size:16px; font-weight:700;">
+                💡 Combined annual tax saving opportunity: ₹{report.total_annual_tax_saving/1000:.0f}K
+                (₹{report.total_annual_tax_saving/12000:.1f}K/month more in take-home)
+            </span>
+        </div>""", unsafe_allow_html=True)
+
+    # Action items
+    if report.action_items:
+        st.markdown('<div class="section-heading">✅ Joint Action Plan</div>', unsafe_allow_html=True)
+        for i, action in enumerate(report.action_items, 1):
+            st.markdown(f"""
+            <div style="display:flex; gap:10px; padding:8px 0; border-bottom:1px solid #F0F0F0;">
+                <div style="font-weight:700; color:#E2001A; min-width:22px;">{i}.</div>
+                <div style="color:#1A1A1A; font-size:13px;">{action}</div>
+            </div>""", unsafe_allow_html=True)
+
+
 # ============================================================================ #
 #  SECTION 6 — QUICK-START PROMPTS (shown when chat is empty)                  #
 # ============================================================================ #
@@ -1497,8 +1645,8 @@ for idx, msg in enumerate(st.session_state.messages):
             render_life_event(result, key_suffix=f"h{idx}")
         elif vtype == "tax_wizard":
             render_tax_wizard(result, key_suffix=f"h{idx}")
-        elif vtype == "tax_wizard":
-            render_tax_wizard(result, key_suffix=f"h{idx}")
+        elif vtype == "couple_planner":
+            render_couples_plan(result, key_suffix=f"h{idx}")
 
 # ============================================================================ #
 #  SECTION 8 — MAIN ROUTING ENGINE (the core of app.py)                       #
@@ -1604,6 +1752,20 @@ def _route_and_respond(user_input: str) -> None:
     if has_tax_signal and intent not in (Intent.HEALTH_SCORE, Intent.LIFE_EVENT, Intent.MF_XRAY):
         logger.info("Deterministic override → TAX_WIZARD (tax signal detected)")
         intent = Intent.TAX_WIZARD
+
+    # ── Deterministic override: COUPLE_PLANNER signals ──────────────────────── #
+    has_couple_signal = any(k in msg_lower for k in [
+        "spouse", "wife", "husband", "partner", "we earn", "our income",
+        "both of us", "my wife", "my husband", "joint", "together we",
+        "combined income", "couple", "married"
+    ])
+    if has_couple_signal and intent not in (
+        Intent.HEALTH_SCORE, Intent.LIFE_EVENT, Intent.TAX_WIZARD, Intent.MF_XRAY
+    ):
+        logger.info("Deterministic override → COUPLE_PLANNER (couple signal detected)")
+        intent = Intent.COUPLE_PLANNER
+
+    # ── LIFE_EVENT context lock across follow-up messages ───────────────────── #
     recent_msgs = st.session_state.msg_results
     last_idx = max(recent_msgs.keys(), default=-1)
     last_was_life_event = (
@@ -1623,9 +1785,9 @@ def _route_and_respond(user_input: str) -> None:
 
     logger.info("Routing to intent: %s", intent)
 
-    # ── Step 2: Handle CLARIFY — but NEVER for LIFE_EVENT (has good defaults) ── #
+    # ── Step 2: Handle CLARIFY — skip for LIFE_EVENT and COUPLE_PLANNER (good defaults) ── #
     if intent == Intent.CLARIFY or (
-        intent not in (Intent.GENERAL_QUERY, Intent.LIFE_EVENT)
+        intent not in (Intent.GENERAL_QUERY, Intent.LIFE_EVENT, Intent.COUPLE_PLANNER)
         and len(intent_result.missing_info) > 2
     ):
         clarification = generate_clarification_request(
@@ -1951,6 +2113,61 @@ def _route_and_respond(user_input: str) -> None:
                     "Please share your annual income and any existing investments like EPF, NPS, ELSS."
                 )
 
+    # ── 4h. COUPLE_PLANNER ──────────────────────────────────────────────────── #
+    elif intent == Intent.COUPLE_PLANNER:
+        with st.spinner("Building your joint financial plan..."):
+            try:
+                from couples_planner import (
+                    CoupleInput, PartnerProfile, build_couples_plan,
+                    format_couples_report_for_llm,
+                )
+                from llm_orchestrator import CouplePlannerParams
+                params: CouplePlannerParams = extract_couple_params(
+                    user_input, full_history_str
+                )
+
+                def _make_profile(p) -> PartnerProfile:
+                    return PartnerProfile(
+                        name=p.name,
+                        monthly_income=p.monthly_income,
+                        monthly_expenses=p.monthly_expenses,
+                        epf_monthly=p.epf_monthly,
+                        nps_monthly=p.nps_monthly,
+                        hra_received_monthly=p.hra_received_monthly,
+                        basic_salary_monthly=p.basic_salary_monthly or p.monthly_income * 0.40,
+                        current_savings=p.current_savings,
+                        current_sip=p.current_sip,
+                        total_insurance_cover=p.total_insurance_cover,
+                        age=p.age,
+                    )
+
+                inp = CoupleInput(
+                    partner_a=_make_profile(params.partner_a),
+                    partner_b=_make_profile(params.partner_b),
+                    rent_paid_monthly=params.rent_paid_monthly,
+                    is_metro=params.is_metro,
+                    combined_goal_corpus=params.combined_goal_corpus,
+                    years_to_goal=params.years_to_goal,
+                    risk_profile=params.risk_profile,
+                )
+                couple_report = build_couples_plan(inp)
+                st.session_state.couple_report = couple_report
+                narrative = generate_response(
+                    user_input,
+                    format_couples_report_for_llm(couple_report),
+                    context=(
+                        f"Combined income: ₹{(inp.partner_a.monthly_income + inp.partner_b.monthly_income)/1000:.0f}K/month. "
+                        f"Partners: {inp.partner_a.name} and {inp.partner_b.name}."
+                    ),
+                )
+                _add_assistant_message(narrative, viz_type="couple_planner", result=couple_report)
+            except (ValueError, RuntimeError) as e:
+                _add_assistant_message(
+                    f"I couldn't build the joint plan: **{e}**\n\n"
+                    "Please share both partners' monthly incomes — for example: "
+                    "'My husband earns ₹1.5L/month and I earn ₹80K/month, we live in Delhi.'"
+                )
+
 
 def _add_assistant_message(
     content: str,
@@ -1987,6 +2204,8 @@ def _add_assistant_message(
             render_life_event(result, key_suffix=suffix)
         elif viz_type == "tax_wizard" and result is not None:
             render_tax_wizard(result, key_suffix=suffix)
+        elif viz_type == "couple_planner" and result is not None:
+            render_couples_plan(result, key_suffix=suffix)
 
 
 # ============================================================================ #

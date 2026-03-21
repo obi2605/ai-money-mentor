@@ -75,6 +75,7 @@ class Intent(str, Enum):
     SIP_PROJECTION  = "SIP_PROJECTION"
     LIFE_EVENT      = "LIFE_EVENT"
     TAX_WIZARD      = "TAX_WIZARD"
+    COUPLE_PLANNER  = "COUPLE_PLANNER"
     GENERAL_QUERY   = "GENERAL_QUERY"
     CLARIFY         = "CLARIFY"
 
@@ -106,6 +107,7 @@ Classify the user's message into exactly ONE intent from this list:
 - SIP_PROJECTION  : User asks "how much SIP do I need", "will my SIP be enough", or wants to project SIP growth.
 - LIFE_EVENT      : User mentions a specific life event: bonus, salary hike, inheritance, windfall, marriage, wedding, baby, child, job loss, layoff, fired, home purchase, buying a house/flat.
 - TAX_WIZARD      : User asks about tax, tax saving, tax regime (old vs new), Form 16, deductions (80C, 80D, HRA, NPS), how to save tax, ITR, tax calculation.
+- COUPLE_PLANNER  : User mentions spouse, partner, husband, wife, "we earn", "our income", "both of us", joint financial planning, couple finances.
 - GENERAL_QUERY   : General financial question that doesn't require personal data or computation.
 - CLARIFY         : User's message is ambiguous or missing critical data; you need to ask a follow-up.
 
@@ -114,7 +116,8 @@ PRIORITY RULES (apply in order, highest priority first):
 2. If the message explicitly says "analyse", "CAMS", "statement", "portfolio", "my funds" → MF_XRAY.
 3. If the message mentions bonus, inheritance, windfall, marriage, baby, job loss, home purchase → LIFE_EVENT.
 4. If the message mentions tax, 80C, 80D, HRA, old regime, new regime, Form 16, ITR, deductions → TAX_WIZARD.
-5. If the message mentions retirement age, FIRE, "retire at", "corpus" → FIRE_PLANNER.
+5. If the message mentions spouse, partner, husband, wife, "we earn", "our income", "both of us", joint planning → COUPLE_PLANNER.
+6. If the message mentions retirement age, FIRE, "retire at", "corpus" → FIRE_PLANNER.
 5. If the message asks about Nifty, Sensex, index, market returns → MARKET_DATA.
 6. If the message asks about SIP amounts or projections → SIP_PROJECTION.
 7. Never let conversation history override these rules. Each message is classified on its OWN content.
@@ -597,6 +600,57 @@ def extract_tax_params(user_message: str, history: str = "") -> TaxParams:
     except Exception as exc:
         logger.error("TaxParams extraction failed: %s", exc)
         raise RuntimeError(f"Could not extract tax parameters: {exc}") from exc
+
+
+def extract_couple_params(user_message: str, history: str = "") -> CouplePlannerParams:
+    """Extract Couple Planner parameters from user conversation."""
+    llm = _build_llm(temperature=0.0)
+    structured_llm = llm.with_structured_output(CouplePlannerParams)
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", _EXTRACTION_SYSTEM + (
+            "\n\nExtract CouplePlannerParams from the conversation. "
+            "Identify two distinct partners — Partner A is typically the person speaking, Partner B is their spouse/partner. "
+            "Use names if mentioned (e.g. 'Rahul and Priya'). "
+            "If monthly income is given, use it directly — do NOT multiply by 12. "
+            "If only one income is mentioned, assign it to partner_a and leave partner_b at defaults. "
+            "basic_salary_monthly defaults to 40% of monthly_income if not stated. "
+            "Extract rent_paid_monthly as the total household rent."
+        )),
+        ("human", "Full conversation history:\n{history}\n\nLatest message: {user_message}"),
+    ])
+    try:
+        return (prompt | structured_llm).invoke({
+            "user_message": user_message, "history": history
+        })
+    except Exception as exc:
+        logger.error("CouplePlannerParams extraction failed: %s", exc)
+        raise RuntimeError(f"Could not extract couple parameters: {exc}") from exc
+
+
+class PartnerParams(BaseModel):
+    """Financial profile of one partner for extraction."""
+    name: str = Field(default="Partner A", description="Partner's name if mentioned, else 'Partner A' or 'Partner B'.")
+    monthly_income: float = Field(default=0.0, description="Gross monthly income in INR.")
+    monthly_expenses: float = Field(default=0.0, description="Monthly personal expenses in INR.")
+    epf_monthly: float = Field(default=0.0, description="Monthly EPF contribution in INR.")
+    nps_monthly: float = Field(default=0.0, description="Monthly NPS contribution in INR.")
+    hra_received_monthly: float = Field(default=0.0, description="Monthly HRA received from employer.")
+    basic_salary_monthly: float = Field(default=0.0, description="Monthly basic salary. Default to 40% of gross if not stated.")
+    current_savings: float = Field(default=0.0, description="Total existing savings/investments in INR.")
+    current_sip: float = Field(default=0.0, description="Monthly SIP in INR.")
+    total_insurance_cover: float = Field(default=0.0, description="Total life insurance sum assured in INR.")
+    age: int = Field(default=30, description="Partner's age.")
+
+
+class CouplePlannerParams(BaseModel):
+    """Parameters for the Couple's Money Planner."""
+    partner_a: PartnerParams = Field(description="First partner's financial profile.")
+    partner_b: PartnerParams = Field(description="Second partner's financial profile.")
+    rent_paid_monthly: float = Field(default=0.0, description="Combined monthly rent paid.")
+    is_metro: bool = Field(default=False, description="True if living in metro (Mumbai/Delhi/Kolkata/Chennai).")
+    combined_goal_corpus: float = Field(default=0.0, description="Target combined wealth goal in INR.")
+    years_to_goal: int = Field(default=20, description="Years to reach the goal.")
+    risk_profile: str = Field(default="moderate", description="Risk profile: conservative, moderate, or aggressive.")
 
 
 # ============================================================================ #
