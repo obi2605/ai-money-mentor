@@ -144,10 +144,11 @@ EXPENSE_PATTERNS = [
 
 # Income patterns — explicitly separate from expense
 INCOME_PATTERNS = [
-    (r"(?:earn|salary|income|take\s*home|ctc|gross)\s+(?:is\s+|of\s+|=\s*)?([\d.,]+\s*(?:cr|crore|l\b|lakh|lakhs|k\b)?)\s*(?:per\s+month|pm|monthly|/month|a\s+month|p\.a\.|per\s+year|per\s+annum|annually)?", "income"),
+    (r"(?:earn|salary|income|take\s*home|ctc|gross)\s*[₹rs.]?\s*(?:is\s+|of\s+|=\s*)?([\d.,]+\s*(?:cr|crore|l\b|lakh|lakhs|k\b)?)", "income"),
     (r"([\d.,]+\s*(?:cr|crore|l\b|lakh|lakhs|k\b)?)\s*(?:per\s+month|pm|monthly|/month|a\s+month)\s+(?:salary|income|earning|take\s*home)", "income"),
-    # "I earn 5L per month" — the 5L is income, not expense
-    (r"(?:i\s+earn|earning)\s+([\d.,]+\s*(?:cr|crore|l\b|lakh|lakhs|k\b)?)", "income"),
+    (r"(?:i\s+earn|earning)\s*[₹rs.]?\s*([\d.,]+\s*(?:cr|crore|l\b|lakh|lakhs|k\b)?)", "income"),
+    # "₹25L salary" / "salary of ₹18L"
+    (r"[₹rs.]\s*([\d.,]+\s*(?:cr|crore|l\b|lakh|lakhs|k\b))\s*(?:salary|income|per\s+month|pm|monthly|/month|per\s+year|annually|ctc|gross)", "income"),
 ]
 
 # Insurance annual premium — not sum assured

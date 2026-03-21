@@ -74,6 +74,7 @@ class Intent(str, Enum):
     MARKET_DATA     = "MARKET_DATA"
     SIP_PROJECTION  = "SIP_PROJECTION"
     LIFE_EVENT      = "LIFE_EVENT"
+    TAX_WIZARD      = "TAX_WIZARD"
     GENERAL_QUERY   = "GENERAL_QUERY"
     CLARIFY         = "CLARIFY"
 
@@ -104,6 +105,7 @@ Classify the user's message into exactly ONE intent from this list:
 - MARKET_DATA     : User asks about Nifty 50, Sensex, index returns, market performance, or specific fund NAVs.
 - SIP_PROJECTION  : User asks "how much SIP do I need", "will my SIP be enough", or wants to project SIP growth.
 - LIFE_EVENT      : User mentions a specific life event: bonus, salary hike, inheritance, windfall, marriage, wedding, baby, child, job loss, layoff, fired, home purchase, buying a house/flat.
+- TAX_WIZARD      : User asks about tax, tax saving, tax regime (old vs new), Form 16, deductions (80C, 80D, HRA, NPS), how to save tax, ITR, tax calculation.
 - GENERAL_QUERY   : General financial question that doesn't require personal data or computation.
 - CLARIFY         : User's message is ambiguous or missing critical data; you need to ask a follow-up.
 
@@ -111,7 +113,8 @@ PRIORITY RULES (apply in order, highest priority first):
 1. If the message contains income/expenses/salary AND any of (emergency fund, insurance, debt, savings) → HEALTH_SCORE. Always. Even if CAMS was mentioned before.
 2. If the message explicitly says "analyse", "CAMS", "statement", "portfolio", "my funds" → MF_XRAY.
 3. If the message mentions bonus, inheritance, windfall, marriage, baby, job loss, home purchase → LIFE_EVENT.
-4. If the message mentions retirement age, FIRE, "retire at", "corpus" → FIRE_PLANNER.
+4. If the message mentions tax, 80C, 80D, HRA, old regime, new regime, Form 16, ITR, deductions → TAX_WIZARD.
+5. If the message mentions retirement age, FIRE, "retire at", "corpus" → FIRE_PLANNER.
 5. If the message asks about Nifty, Sensex, index, market returns → MARKET_DATA.
 6. If the message asks about SIP amounts or projections → SIP_PROJECTION.
 7. Never let conversation history override these rules. Each message is classified on its OWN content.
@@ -356,6 +359,76 @@ class LifeEventParams(BaseModel):
     years_to_retirement: int = Field(default=20, description="Years to retirement.")
 
 
+class TaxParams(BaseModel):
+    """Parameters for the Tax Wizard."""
+    gross_annual_income: float = Field(
+        description="Gross annual income in INR. If user says monthly, multiply by 12.",
+        gt=0
+    )
+    basic_salary_annual: float = Field(
+        default=0.0,
+        description="Basic salary annual. If not stated, estimate as 40% of gross."
+    )
+    hra_received_annual: float = Field(
+        default=0.0,
+        description="HRA received annually in INR."
+    )
+    epf_employee_annual: float = Field(
+        default=0.0,
+        description="Employee EPF contribution annually. If monthly EPF given, multiply by 12."
+    )
+    ppf_annual: float = Field(default=0.0, description="Annual PPF contribution in INR.")
+    elss_annual: float = Field(default=0.0, description="Annual ELSS investment in INR.")
+    life_insurance_premium: float = Field(
+        default=0.0,
+        description="Annual life insurance premium in INR."
+    )
+    nps_employee_annual: float = Field(
+        default=0.0,
+        description="Annual NPS employee contribution (80CCD 1). If monthly given, multiply by 12."
+    )
+    nps_employer_annual: float = Field(
+        default=0.0,
+        description="Annual NPS employer contribution (80CCD 2). If monthly given, multiply by 12."
+    )
+    nps_additional_annual: float = Field(
+        default=0.0,
+        description="Additional NPS contribution under 80CCD(1B) — max ₹50,000."
+    )
+    health_insurance_self: float = Field(
+        default=0.0,
+        description="Annual health insurance premium for self/spouse/children."
+    )
+    health_insurance_parents: float = Field(
+        default=0.0,
+        description="Annual health insurance premium for parents."
+    )
+    rent_paid_annual: float = Field(
+        default=0.0,
+        description="Annual rent paid in INR (for HRA calculation)."
+    )
+    is_metro: bool = Field(
+        default=False,
+        description="True if user lives in metro city (Mumbai/Delhi/Kolkata/Chennai)."
+    )
+    home_loan_principal: float = Field(
+        default=0.0,
+        description="Annual home loan principal repayment (80C)."
+    )
+    home_loan_interest: float = Field(
+        default=0.0,
+        description="Annual home loan interest paid (Section 24B, max ₹2L)."
+    )
+    education_loan_interest: float = Field(
+        default=0.0,
+        description="Annual education loan interest paid (80E, no cap)."
+    )
+    risk_profile: str = Field(
+        default="moderate",
+        description="Investment risk profile: conservative, moderate, or aggressive."
+    )
+
+
 # ============================================================================ #
 #  SECTION 4 — EXTRACTION CHAINS (LangChain → Pydantic)                       #
 # ============================================================================ #
@@ -501,6 +574,29 @@ def extract_life_event_params(user_message: str, history: str = "") -> LifeEvent
     except Exception as exc:
         logger.error("LifeEventParams extraction failed: %s", exc)
         raise RuntimeError(f"Could not extract life event parameters: {exc}") from exc
+
+
+def extract_tax_params(user_message: str, history: str = "") -> TaxParams:
+    """Extract Tax Wizard parameters from user conversation."""
+    llm = _build_llm(temperature=0.0)
+    structured_llm = llm.with_structured_output(TaxParams)
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", _EXTRACTION_SYSTEM + (
+            "\n\nExtract TaxParams from the conversation. "
+            "gross_annual_income is REQUIRED — if user gives monthly income, multiply by 12. "
+            "For EPF/NPS monthly contributions, multiply by 12 to get annual. "
+            "If basic salary not stated, default to 40% of gross. "
+            "If HRA not stated, default to 50% of basic for metros, 40% otherwise."
+        )),
+        ("human", "Full conversation history:\n{history}\n\nLatest message: {user_message}"),
+    ])
+    try:
+        return (prompt | structured_llm).invoke({
+            "user_message": user_message, "history": history
+        })
+    except Exception as exc:
+        logger.error("TaxParams extraction failed: %s", exc)
+        raise RuntimeError(f"Could not extract tax parameters: {exc}") from exc
 
 
 # ============================================================================ #

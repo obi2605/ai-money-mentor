@@ -35,6 +35,7 @@ from llm_orchestrator import (
     extract_life_event_params,
     extract_market_params,
     extract_sip_params,
+    extract_tax_params,
     format_history,
     generate_clarification_request,
     generate_general_response,
@@ -267,6 +268,7 @@ def _init_state() -> None:
         "processing": False,
         "xray_report": None,
         "life_event_result": None,
+        "tax_wizard_result": None,
         "msg_results": {},
     }
     for key, val in defaults.items():
@@ -304,6 +306,7 @@ with st.sidebar:
         "📉 Market Data": Intent.MARKET_DATA,
         "🔬 MF Portfolio X-Ray": Intent.MF_XRAY,
         "🎯 Life Event Advisor": Intent.LIFE_EVENT,
+        "🧾 Tax Wizard": Intent.TAX_WIZARD,
     }
     selected_module_label = st.selectbox(
         "Module", list(module_options.keys()), label_visibility="collapsed"
@@ -352,6 +355,7 @@ with st.sidebar:
         st.session_state.cams_data = None
         st.session_state.xray_report = None
         st.session_state.life_event_result = None
+        st.session_state.tax_wizard_result = None
         st.rerun()
 
     # --- Disclaimer ---
@@ -1095,6 +1099,344 @@ def render_life_event(result, key_suffix: str = "0") -> None:
             </div>""", unsafe_allow_html=True)
 
 
+def render_tax_wizard(report, key_suffix: str = "0") -> None:
+    """Render the Tax Wizard: regime comparison, deduction gaps, ranked suggestions."""
+    CHART_FONT = dict(color="#1A1A1A", family="'Source Sans 3', sans-serif", size=11)
+    o, n = report.old_regime, report.new_regime
+    winner = report.recommended_regime
+    win_color = "#1B9E4E"
+    lose_color = "#E2001A"
+
+    st.markdown('<div class="section-heading">🧾 Old Regime vs New Regime</div>',
+                unsafe_allow_html=True)
+
+    # Side-by-side regime cards
+    col_old, col_new = st.columns(2)
+    old_border = win_color if winner == "Old Regime" else "#DDDDDD"
+    new_border = win_color if winner == "New Regime" else "#DDDDDD"
+    old_badge = "✅ RECOMMENDED" if winner == "Old Regime" else ""
+    new_badge = "✅ RECOMMENDED" if winner == "New Regime" else ""
+
+    with col_old:
+        st.markdown(f"""
+        <div style="border:2px solid {old_border}; border-radius:10px; padding:16px;">
+            <div style="font-family:'Playfair Display',serif; font-weight:700;
+                        font-size:16px; color:#1A1A1A;">Old Regime
+                <span style="font-size:11px; color:{win_color}; margin-left:6px;">{old_badge}</span>
+            </div>
+            <div style="margin-top:10px;">
+                <div style="color:#666; font-size:12px;">TOTAL TAX</div>
+                <div style="font-size:24px; font-weight:900; color:#E2001A;">
+                    ₹{o.total_tax/1e5:.2f}L
+                </div>
+                <div style="color:#666; font-size:12px; margin-top:6px;">
+                    Effective rate: {o.effective_rate_pct:.1f}%
+                </div>
+                <div style="color:#555; font-size:13px; margin-top:4px;">
+                    Monthly take-home: ₹{o.take_home_monthly:,.0f}
+                </div>
+                <div style="color:#888; font-size:11px; margin-top:6px;">
+                    Deductions: ₹{o.total_deductions/1e5:.2f}L
+                </div>
+            </div>
+        </div>""", unsafe_allow_html=True)
+
+    with col_new:
+        st.markdown(f"""
+        <div style="border:2px solid {new_border}; border-radius:10px; padding:16px;">
+            <div style="font-family:'Playfair Display',serif; font-weight:700;
+                        font-size:16px; color:#1A1A1A;">New Regime
+                <span style="font-size:11px; color:{win_color}; margin-left:6px;">{new_badge}</span>
+            </div>
+            <div style="margin-top:10px;">
+                <div style="color:#666; font-size:12px;">TOTAL TAX</div>
+                <div style="font-size:24px; font-weight:900; color:#E2001A;">
+                    ₹{n.total_tax/1e5:.2f}L
+                </div>
+                <div style="color:#666; font-size:12px; margin-top:6px;">
+                    Effective rate: {n.effective_rate_pct:.1f}%
+                </div>
+                <div style="color:#555; font-size:13px; margin-top:4px;">
+                    Monthly take-home: ₹{n.take_home_monthly:,.0f}
+                </div>
+                <div style="color:#888; font-size:11px; margin-top:6px;">
+                    Std deduction: ₹75,000 only
+                </div>
+            </div>
+        </div>""", unsafe_allow_html=True)
+
+    st.markdown(f"""
+    <div style="background:#F0FFF4; border-left:3px solid #1B9E4E;
+                padding:10px 16px; border-radius:6px; margin:12px 0;">
+        <strong>{report.recommended_regime}</strong> saves you
+        <strong>₹{report.tax_saving_by_switching:,.0f}/year</strong>
+        (₹{report.tax_saving_by_switching/12:,.0f}/month more in hand).
+    </div>""", unsafe_allow_html=True)
+
+    # Bar chart comparison
+    import plotly.graph_objects as go
+    fig = go.Figure(data=[
+        go.Bar(name="Old Regime", x=["Tax Payable", "Take Home (Monthly)"],
+               y=[o.total_tax, o.take_home_monthly * 12],
+               marker_color=["#E2001A", "#1B9E4E"], opacity=0.8),
+        go.Bar(name="New Regime", x=["Tax Payable", "Take Home (Monthly)"],
+               y=[n.total_tax, n.take_home_monthly * 12],
+               marker_color=["#F39C12", "#2ECC71"], opacity=0.8),
+    ])
+    fig.update_layout(
+        barmode="group",
+        title=dict(text="Old vs New Regime — Annual Comparison",
+                   font=dict(family="'Playfair Display',serif", size=14, color="#1A1A1A")),
+        xaxis=dict(tickfont=CHART_FONT),
+        yaxis=dict(title="₹ Annual", tickformat=",.0f", tickfont=CHART_FONT,
+                   title_font=CHART_FONT),
+        font=CHART_FONT, paper_bgcolor="white", plot_bgcolor="white",
+        margin=dict(t=40, b=30, l=70, r=20), height=280,
+        legend=dict(font=CHART_FONT),
+    )
+    st.plotly_chart(fig, use_container_width=True, key=f"tax_regime_chart_{key_suffix}")
+
+    # Deduction breakdown (old regime)
+    st.markdown('<div class="section-heading">💰 Your Deductions (Old Regime)</div>',
+                unsafe_allow_html=True)
+    d = report.deductions
+    deduction_items = [
+        ("Standard Deduction", d.standard_deduction),
+        ("80C (EPF + ELSS + PPF etc.)", d.section_80c_claimed),
+        ("80CCD(1B) NPS Additional", d.nps_additional),
+        ("80CCD(2) NPS Employer", d.nps_employer),
+        ("80D Health Insurance", d.section_80d_claimed),
+        ("HRA Exemption", d.hra_exempt),
+        ("Home Loan Interest (24B)", min(d.home_loan_interest, 200_000)),
+        ("Education Loan Interest (80E)", d.section_80e),
+    ]
+    deduction_items = [(k, v) for k, v in deduction_items if v > 0]
+    if deduction_items:
+        total_ded = sum(v for _, v in deduction_items)
+        for label, val in deduction_items:
+            pct = val / total_ded * 100 if total_ded > 0 else 0
+            st.markdown(f"""
+            <div style="display:flex; justify-content:space-between; padding:6px 0;
+                        border-bottom:1px solid #F5F5F5;">
+                <span style="color:#555; font-size:13px;">{label}</span>
+                <span style="font-weight:600; color:#1A1A1A;">
+                    ₹{val:,.0f} <span style="color:#888; font-size:11px;">({pct:.0f}%)</span>
+                </span>
+            </div>""", unsafe_allow_html=True)
+        st.markdown(f"""
+        <div style="display:flex; justify-content:space-between; padding:8px 0;
+                    border-top:2px solid #1A1A1A; margin-top:4px;">
+            <span style="font-weight:700;">Total Deductions</span>
+            <span style="font-weight:700; color:#1B9E4E;">₹{total_ded:,.0f}</span>
+        </div>""", unsafe_allow_html=True)
+    else:
+        st.info("No deductions recorded. Switch to Old Regime and claim deductions to save more tax.")
+
+    # Deduction gaps
+    if report.deduction_gaps:
+        st.markdown('<div class="section-heading">🎯 Missed Deductions — Money Left on Table</div>',
+                    unsafe_allow_html=True)
+        st.markdown(f"""
+        <div style="background:#FFF0F0; border-left:3px solid #E2001A;
+                    padding:10px 16px; border-radius:6px; margin-bottom:12px;">
+            You could save an additional
+            <strong style="color:#E2001A;">₹{report.total_potential_additional_saving:,.0f}/year</strong>
+            by filling these deduction gaps.
+        </div>""", unsafe_allow_html=True)
+        for g in report.deduction_gaps:
+            st.markdown(f"""
+            <div style="padding:10px 14px; border-radius:6px; margin-bottom:8px;
+                        background:#F9F9F9; border-left:3px solid #F39C12;">
+                <div style="display:flex; justify-content:space-between;">
+                    <div>
+                        <span style="font-weight:700; color:#1A1A1A;">{g.section}</span>
+                        <span style="color:#666; font-size:12px; margin-left:8px;">
+                            {g.description}
+                        </span>
+                    </div>
+                    <div style="text-align:right; min-width:120px;">
+                        <div style="color:#E2001A; font-weight:700;">
+                            Save ₹{g.potential_tax_saving:,.0f}
+                        </div>
+                        <div style="color:#888; font-size:11px;">Gap: ₹{g.gap:,.0f}</div>
+                    </div>
+                </div>
+                <div style="color:#555; font-size:12px; margin-top:6px;">
+                    💡 {g.action}
+                </div>
+            </div>""", unsafe_allow_html=True)
+
+    # Ranked investment suggestions
+    if report.suggestions:
+        st.markdown('<div class="section-heading">📊 Tax-Saving Investments — Ranked for You</div>',
+                    unsafe_allow_html=True)
+        RISK_COLOR = {"Low": "#1B9E4E", "Medium": "#F39C12", "High": "#E2001A"}
+        for s in report.suggestions[:5]:
+            risk_col = RISK_COLOR.get(s.risk, "#666")
+            st.markdown(f"""
+            <div style="padding:10px 14px; border-radius:6px; margin-bottom:8px;
+                        background:#F9F9F9; border-left:3px solid {risk_col};">
+                <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                    <div>
+                        <span style="font-weight:700; color:#1A1A1A;">{s.name}</span>
+                        <span style="background:{risk_col}; color:white; font-size:10px;
+                                     padding:1px 6px; border-radius:3px; margin-left:8px;">
+                            {s.risk} Risk
+                        </span>
+                    </div>
+                    <div style="text-align:right; min-width:140px;">
+                        <div style="font-weight:700; color:#1A1A1A;">
+                            {f"{s.expected_return_pct:.1f}% returns" if s.expected_return_pct > 0 else "Protection"}
+                        </div>
+                        <div style="color:#888; font-size:11px;">{s.section} | Lock-in: {s.liquidity}</div>
+                    </div>
+                </div>
+                <div style="color:#555; font-size:12px; margin-top:4px;">{s.why_now}</div>
+                <div style="color:#888; font-size:11px; margin-top:2px;">
+                    Tax on returns: {s.tax_on_returns}
+                </div>
+            </div>""", unsafe_allow_html=True)
+
+
+def render_tax_wizard(report, key_suffix: str = "0") -> None:
+    """Render the Tax Wizard: regime comparison, deduction gaps, ranked suggestions."""
+    o, n = report.old_regime, report.new_regime
+    rec = report.recommended_regime
+    rec_color = "#1B9E4E"
+    other_color = "#E2001A"
+    old_color = rec_color if rec == "Old Regime" else other_color
+    new_color = rec_color if rec == "New Regime" else other_color
+
+    # ── Regime comparison cards ─────────────────────────────────────────────── #
+    st.markdown('<div class="section-heading">📊 Old vs New Regime</div>', unsafe_allow_html=True)
+    c1, c2 = st.columns(2)
+    for col, result, color, label in [
+        (c1, o, old_color, "OLD REGIME"),
+        (c2, n, new_color, "NEW REGIME"),
+    ]:
+        with col:
+            badge = " ✅ RECOMMENDED" if result.regime == rec else ""
+            st.markdown(f"""
+            <div style="border:2px solid {color}; border-radius:10px; padding:16px;
+                        background:{'#F0FFF4' if result.regime == rec else '#FFF9F9'};">
+                <div style="font-family:'Playfair Display',serif; font-size:14px;
+                            font-weight:700; color:{color}; margin-bottom:12px;">
+                    {label}{badge}
+                </div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+                    <div>
+                        <div style="font-size:11px; color:#888; text-transform:uppercase;">Total Tax</div>
+                        <div style="font-family:'Playfair Display',serif; font-size:20px;
+                                    font-weight:700; color:{color};">
+                            ₹{result.total_tax/1e5:.2f}L
+                        </div>
+                    </div>
+                    <div>
+                        <div style="font-size:11px; color:#888; text-transform:uppercase;">Effective Rate</div>
+                        <div style="font-family:'Playfair Display',serif; font-size:20px;
+                                    font-weight:700; color:#1A1A1A;">
+                            {result.effective_rate_pct:.1f}%
+                        </div>
+                    </div>
+                    <div>
+                        <div style="font-size:11px; color:#888; text-transform:uppercase;">Deductions</div>
+                        <div style="font-size:15px; font-weight:600; color:#1A1A1A;">
+                            ₹{result.total_deductions/1e5:.1f}L
+                        </div>
+                    </div>
+                    <div>
+                        <div style="font-size:11px; color:#888; text-transform:uppercase;">Monthly Take-home</div>
+                        <div style="font-size:15px; font-weight:600; color:#1B9E4E;">
+                            ₹{result.take_home_monthly/1000:.1f}K
+                        </div>
+                    </div>
+                </div>
+            </div>""", unsafe_allow_html=True)
+
+    st.markdown(f"""
+    <div style="background:#F0FFF4; border-left:3px solid #1B9E4E;
+                padding:12px 16px; border-radius:6px; margin:16px 0;">
+        <span style="font-family:'Playfair Display',serif; font-size:15px;
+                     font-weight:700; color:#1A1A1A;">
+            💡 {rec} saves you ₹{report.tax_saving_by_switching/1000:.1f}K/year
+            (₹{report.tax_saving_by_switching/12/1000:.1f}K/month more in take-home)
+        </span>
+    </div>""", unsafe_allow_html=True)
+
+    # ── Deduction gaps ──────────────────────────────────────────────────────── #
+    if report.deduction_gaps:
+        st.markdown(
+            f'<div class="section-heading">🔍 Missed Deductions — '
+            f'₹{report.total_potential_additional_saving/1000:.0f}K Additional Savings Available</div>',
+            unsafe_allow_html=True
+        )
+        for g in report.deduction_gaps:
+            st.markdown(f"""
+            <div style="background:#FFFDF0; border-left:3px solid #F0A500;
+                        padding:10px 14px; border-radius:6px; margin-bottom:8px;">
+                <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                    <div>
+                        <span style="font-weight:700; color:#1A1A1A; font-size:13px;">
+                            Section {g.section}
+                        </span>
+                        <span style="color:#666; font-size:12px; margin-left:8px;">
+                            {g.description}
+                        </span>
+                        <div style="color:#555; font-size:12px; margin-top:4px;">
+                            {g.action}
+                        </div>
+                    </div>
+                    <div style="text-align:right; min-width:100px;">
+                        <div style="font-weight:700; color:#E2001A; font-size:14px;">
+                            Save ₹{g.potential_tax_saving/1000:.0f}K
+                        </div>
+                        <div style="color:#888; font-size:11px;">
+                            Gap: ₹{g.gap/1000:.0f}K
+                        </div>
+                    </div>
+                </div>
+            </div>""", unsafe_allow_html=True)
+
+    # ── Investment suggestions ──────────────────────────────────────────────── #
+    if report.suggestions:
+        st.markdown(
+            '<div class="section-heading">📈 Recommended Tax-Saving Investments</div>',
+            unsafe_allow_html=True
+        )
+        RISK_COLOR = {"Low": "#1B9E4E", "Medium": "#F39C12", "High": "#E2001A"}
+        for s in report.suggestions[:5]:
+            risk_color = RISK_COLOR.get(s.risk, "#888")
+            st.markdown(f"""
+            <div style="padding:10px 14px; border-radius:6px; margin-bottom:8px;
+                        background:#F9F9F9; border-left:3px solid {risk_color};">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <div>
+                        <div style="font-weight:700; color:#1A1A1A; font-size:14px;">
+                            {s.name}
+                            <span style="font-size:11px; color:#888; font-weight:400;
+                                         margin-left:8px;">Section {s.section}</span>
+                        </div>
+                        <div style="color:#555; font-size:12px; margin-top:3px;">{s.why_now}</div>
+                        <div style="margin-top:4px;">
+                            <span style="font-size:11px; background:{risk_color}20; color:{risk_color};
+                                         padding:2px 6px; border-radius:3px; margin-right:6px;">
+                                {s.risk} Risk
+                            </span>
+                            <span style="font-size:11px; color:#666;">
+                                Lock-in: {s.lock_in_years}Y | Returns: ~{s.expected_return_pct:.0f}% | {s.tax_on_returns}
+                            </span>
+                        </div>
+                    </div>
+                    <div style="text-align:right; min-width:90px;">
+                        <div style="font-weight:700; color:#1B9E4E; font-size:15px;">
+                            ₹{s.max_deduction/1e5:.1f}L
+                        </div>
+                        <div style="font-size:11px; color:#888;">max deduction</div>
+                    </div>
+                </div>
+            </div>""", unsafe_allow_html=True)
+
+
 # ============================================================================ #
 #  SECTION 6 — QUICK-START PROMPTS (shown when chat is empty)                  #
 # ============================================================================ #
@@ -1153,6 +1495,10 @@ for idx, msg in enumerate(st.session_state.messages):
             render_xray_report(result, key_suffix=f"h{idx}")
         elif vtype == "life_event":
             render_life_event(result, key_suffix=f"h{idx}")
+        elif vtype == "tax_wizard":
+            render_tax_wizard(result, key_suffix=f"h{idx}")
+        elif vtype == "tax_wizard":
+            render_tax_wizard(result, key_suffix=f"h{idx}")
 
 # ============================================================================ #
 #  SECTION 8 — MAIN ROUTING ENGINE (the core of app.py)                       #
@@ -1249,7 +1595,15 @@ def _route_and_respond(user_input: str) -> None:
         intent = Intent.LIFE_EVENT
         logger.info("Deterministic override → LIFE_EVENT (life event signal detected)")
 
-    # ── If previous intent was LIFE_EVENT and user is giving more details, stay ─ #
+    # ── Deterministic override: TAX_WIZARD signals ──────────────────────────── #
+    has_tax_signal = any(k in msg_lower for k in [
+        "tax", "80c", "80d", "hra", "regime", "form 16", "form16", "itr",
+        "deduction", "tds", "elss", "nps tax", "tax saving", "save tax",
+        "tax bracket", "income tax", "how much tax"
+    ])
+    if has_tax_signal and intent not in (Intent.HEALTH_SCORE, Intent.LIFE_EVENT, Intent.MF_XRAY):
+        logger.info("Deterministic override → TAX_WIZARD (tax signal detected)")
+        intent = Intent.TAX_WIZARD
     recent_msgs = st.session_state.msg_results
     last_idx = max(recent_msgs.keys(), default=-1)
     last_was_life_event = (
@@ -1545,6 +1899,58 @@ def _route_and_respond(user_input: str) -> None:
                     "'I got a ₹5L bonus' or 'I'm getting married next year with a ₹10L budget'."
                 )
 
+    # ── 4g. TAX_WIZARD ──────────────────────────────────────────────────────── #
+    elif intent == Intent.TAX_WIZARD:
+        with st.spinner("Calculating your tax liability and finding savings opportunities..."):
+            try:
+                from tax_wizard import build_tax_report, format_tax_report_for_llm
+                from llm_orchestrator import TaxParams
+                params: TaxParams = extract_tax_params(user_input, full_history_str)
+
+                # Override only contribution fields with preprocessor values
+                # DO NOT override gross_annual_income — the LLM correctly handles
+                # annual vs monthly income; preprocessor always stores as monthly which causes double-multiply
+                _facts = scan_conversation(st.session_state.messages)
+                if _facts.monthly_epf > 0 and params.epf_employee_annual == 0:
+                    params.epf_employee_annual = _facts.monthly_epf * 12
+                if _facts.monthly_nps > 0 and params.nps_employee_annual == 0:
+                    params.nps_employee_annual = _facts.monthly_nps * 12
+                if _facts.annual_insurance_premium > 0 and params.life_insurance_premium == 0:
+                    params.life_insurance_premium = _facts.annual_insurance_premium
+
+                tax_report = build_tax_report(
+                    gross_annual_income=params.gross_annual_income,
+                    basic_salary_annual=params.basic_salary_annual or params.gross_annual_income * 0.40,
+                    hra_received_annual=params.hra_received_annual,
+                    epf_employee_annual=params.epf_employee_annual,
+                    ppf_annual=params.ppf_annual,
+                    elss_annual=params.elss_annual,
+                    life_insurance_premium=params.life_insurance_premium,
+                    nps_employee_annual=params.nps_employee_annual,
+                    nps_employer_annual=params.nps_employer_annual,
+                    nps_additional_annual=params.nps_additional_annual,
+                    health_insurance_self=params.health_insurance_self,
+                    health_insurance_parents=params.health_insurance_parents,
+                    rent_paid_annual=params.rent_paid_annual,
+                    is_metro=params.is_metro,
+                    home_loan_principal=params.home_loan_principal,
+                    home_loan_interest=params.home_loan_interest,
+                    education_loan_interest=params.education_loan_interest,
+                    risk_profile=params.risk_profile,
+                )
+                st.session_state.tax_wizard_result = tax_report
+                narrative = generate_response(
+                    user_input,
+                    format_tax_report_for_llm(tax_report),
+                    context=f"Income: ₹{params.gross_annual_income/1e5:.1f}L. Recommended: {tax_report.recommended_regime}.",
+                )
+                _add_assistant_message(narrative, viz_type="tax_wizard", result=tax_report)
+            except (ValueError, RuntimeError) as e:
+                _add_assistant_message(
+                    f"I couldn't calculate your taxes: **{e}**\n\n"
+                    "Please share your annual income and any existing investments like EPF, NPS, ELSS."
+                )
+
 
 def _add_assistant_message(
     content: str,
@@ -1579,6 +1985,8 @@ def _add_assistant_message(
             render_xray_report(result, key_suffix=suffix)
         elif viz_type == "life_event" and result is not None:
             render_life_event(result, key_suffix=suffix)
+        elif viz_type == "tax_wizard" and result is not None:
+            render_tax_wizard(result, key_suffix=suffix)
 
 
 # ============================================================================ #
