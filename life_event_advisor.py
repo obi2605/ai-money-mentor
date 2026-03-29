@@ -118,6 +118,11 @@ def plan_bonus(inp: LifeEventInput) -> LifeEventResult:
     result = LifeEventResult(event_type=inp.event_type, event_amount=inp.event_amount)
     remaining = inp.event_amount
 
+    if inp.event_amount <= 0:
+        result.tax_tip = "Please share your bonus amount so I can create a specific allocation plan."
+        result.summary = "Tell me your bonus amount and I'll show you exactly how to deploy it."
+        return result
+
     # 1. Tax reserve (30% bracket = TDS already deducted usually, but top-up for advance tax)
     tax = _tax_on_bonus(inp.event_amount, inp.tax_bracket_pct)
     # Assume TDS deducted at source — only flag if bracket is 30%

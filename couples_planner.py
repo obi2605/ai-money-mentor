@@ -318,6 +318,8 @@ def optimize_sip_split(
         )
 
     # Regular equity MF — invest in lower-bracket partner's name to reduce LTCG tax
+    # Section 64(1)(iv): assets gifted to non-earning spouse → all income (incl. LTCG)
+    # clubbed with transferor's income. Only recommend routing when BOTH earn independently.
     remaining_sip = total_monthly_sip - a_elss_monthly - b_elss_monthly
     if remaining_sip > 0:
         if b_rate < a_rate and b_income > 0:
@@ -326,6 +328,16 @@ def optimize_sip_split(
             advice.append(
                 f"Route ₹{b_regular/1000:.1f}K/month equity MF in {b.name}'s name "
                 f"— LTCG taxed at lower {b_rate*100:.0f}% vs {a.name}'s {a_rate*100:.0f}%"
+            )
+        elif b_rate < a_rate and b_income == 0:
+            # Homemaker: Section 64 clubbing applies — routing gives no tax benefit
+            a_regular = remaining_sip * 0.90
+            b_regular = remaining_sip * 0.10
+            advice.append(
+                f"⚠️ Sec 64 clubbing: equity MF in {b.name}'s name will be taxed "
+                f"in {a.name}'s hands (no LTCG benefit). "
+                f"Route ₹{a_regular/1000:.1f}K/month in {a.name}'s name. "
+                f"Exception: PPF in {b.name}'s name is EEE — fully exempt."
             )
         else:
             a_regular = remaining_sip * 0.60

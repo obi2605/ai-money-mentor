@@ -1724,31 +1724,52 @@ def _route_and_respond(user_input: str) -> None:
     # ── Deterministic override: strong HEALTH_SCORE signals ─────────────────── #
     msg_lower = user_input.lower()
     has_income = any(k in msg_lower for k in ["earn", "income", "salary", "per month"])
+    # "saving" and "expense" removed — too generic, fire/couple queries use them naturally
     has_health_signal = any(k in msg_lower for k in [
-        "expense", "emergency", "insurance", "debt", "emi", "saving"
+        "emergency fund", "insurance", "debt", "emi",
+        "health score", "financial health", "money health"
     ])
-    if has_income and has_health_signal and intent != Intent.HEALTH_SCORE:
+    # Guard: don't override if the message has stronger FIRE/couple/tax signals
+    has_fire_signal = any(k in msg_lower for k in [
+        "retire", "retirement", "fire", "corpus", "retire at", "want to retire",
+        "financial independence"
+    ])
+    has_couple_kw = any(k in msg_lower for k in [
+        "wife", "husband", "spouse", "partner", "we earn", "our income",
+        "both of us", "my wife", "my husband", "homemaker"
+    ])
+    has_tax_signal = any(k in msg_lower for k in [
+        "tax", "80c", "80d", "hra", "regime", "form 16", "form16", "itr",
+        "deduction", "tds", "elss", "nps tax", "tax saving", "save tax",
+        "tax bracket", "income tax", "how much tax"
+    ])
+    if (has_income and has_health_signal
+            and not has_fire_signal and not has_couple_kw
+            and not has_tax_signal
+            and intent not in (Intent.HEALTH_SCORE, Intent.TAX_WIZARD)):
+        logger.info("Deterministic override: %s → HEALTH_SCORE (income+health signals)", intent)
+        intent = Intent.HEALTH_SCORE
         logger.info("Deterministic override: %s → HEALTH_SCORE (income+health signals)", intent)
         intent = Intent.HEALTH_SCORE
 
     # ── Deterministic override: lock LIFE_EVENT across follow-up messages ────── #
     # If the previous assistant message was a LIFE_EVENT clarification request,
     # and this message doesn't trigger a different strong intent, stay in LIFE_EVENT.
-    has_life_event_signal = any(k in msg_lower for k in [
-        "bonus", "inheritance", "windfall", "marriage", "wedding", "baby", "child",
-        "job loss", "lost my job", "fired", "laid off", "layoff", "home", "house", "flat",
-        "property", "bought", "getting married", "expecting"
-    ])
+    import re as _re
+    _life_event_patterns = [
+        r'\bbonus\b', r'\binheritance\b', r'\bwindfall\b', r'\bmarriage\b',
+        r'\bwedding\b', r'\bbaby\b', r'\bjob loss\b', r'\blost my job\b',
+        r'\bfired\b', r'\blaid off\b', r'\blayoff\b', r'\bhome purchase\b',
+        r'\bbuy(ing)? (a |my )?(house|flat|property|home)\b',
+        r'\bpurchas(e|ing) (a |my )?(house|flat|property|home)\b',
+        r'\bhouse\b', r'\bflat\b', r'\bgetting married\b', r'\bexpecting\b',
+    ]
+    has_life_event_signal = any(_re.search(p, msg_lower) for p in _life_event_patterns)
     if has_life_event_signal and intent not in (Intent.HEALTH_SCORE, Intent.MF_XRAY):
         intent = Intent.LIFE_EVENT
         logger.info("Deterministic override → LIFE_EVENT (life event signal detected)")
 
     # ── Deterministic override: TAX_WIZARD signals ──────────────────────────── #
-    has_tax_signal = any(k in msg_lower for k in [
-        "tax", "80c", "80d", "hra", "regime", "form 16", "form16", "itr",
-        "deduction", "tds", "elss", "nps tax", "tax saving", "save tax",
-        "tax bracket", "income tax", "how much tax"
-    ])
     if has_tax_signal and intent not in (Intent.HEALTH_SCORE, Intent.LIFE_EVENT, Intent.MF_XRAY):
         logger.info("Deterministic override → TAX_WIZARD (tax signal detected)")
         intent = Intent.TAX_WIZARD
@@ -1757,10 +1778,10 @@ def _route_and_respond(user_input: str) -> None:
     has_couple_signal = any(k in msg_lower for k in [
         "spouse", "wife", "husband", "partner", "we earn", "our income",
         "both of us", "my wife", "my husband", "joint", "together we",
-        "combined income", "couple", "married"
+        "combined income", "couple", "married", "homemaker"
     ])
     if has_couple_signal and intent not in (
-        Intent.HEALTH_SCORE, Intent.LIFE_EVENT, Intent.TAX_WIZARD, Intent.MF_XRAY
+        Intent.LIFE_EVENT, Intent.TAX_WIZARD, Intent.MF_XRAY
     ):
         logger.info("Deterministic override → COUPLE_PLANNER (couple signal detected)")
         intent = Intent.COUPLE_PLANNER

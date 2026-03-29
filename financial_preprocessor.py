@@ -112,6 +112,11 @@ ASSET_PATTERNS = [
 
     # Real Estate
     (r"([\d.,]+\s*(?:cr|crore|crores|l\b|lakh|lakhs|k\b))\s*(?:in\s+)?(?:real\s+estate|property|house|flat)", "other"),
+
+    # Generic savings / corpus — catch-all for "₹50L in savings", "have savings of ₹50L"
+    (r"([\d.,]+\s*(?:cr|crore|crores|l\b|lakh|lakhs|k\b))\s*(?:in\s+)?(?:savings?|corpus|investment|portfolio)\b", "debt"),
+    (r"(?:savings?|corpus)\s+(?:of\s+|worth\s+|is\s+)?([\d.,]+\s*(?:cr|crore|crores|l\b|lakh|lakhs|k\b))", "debt"),
+    (r"(?:have|has)\s+([\d.,]+\s*(?:cr|crore|crores|l\b|lakh|lakhs|k\b))\s+(?:in\s+)?(?:savings?|corpus|investments?)", "debt"),
 ]
 
 # Monthly contribution patterns — these are NOT assets, they are flows
@@ -312,10 +317,21 @@ def scan_conversation(messages: list[dict]) -> ExtractedFacts:
 
     # ── Extract income ─────────────────────────────────────────────────────── #
     income_candidates = []
+    _annual_hints = re.compile(
+        r"per\s+year|/year|a\s+year|annually|annual|per\s+annum|p\.a\b|pa\b",
+        re.IGNORECASE
+    )
     for pattern, _ in INCOME_PATTERNS:
         for m in re.finditer(pattern, user_text, re.IGNORECASE):
             val = parse_inr(m.group(1))
             if val and val > 10000:  # Filter out noise
+                # Check a window of 30 chars around the match for annual qualifiers
+                window_start = max(0, m.start() - 10)
+                window_end = min(len(user_text), m.end() + 30)
+                window = user_text[window_start:window_end]
+                if _annual_hints.search(window):
+                    val = val / 12  # Convert annual to monthly
+                    logger.info("Annual income detected — converting to monthly: ₹%.0f/mo", val)
                 income_candidates.append(val)
 
     if income_candidates:
